@@ -66,8 +66,12 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       <div><label for="pw1">Senha mestra</label><input type="password" id="pw1" autocomplete="off"></div>
       <div id="pw2wrap"><label for="pw2">Confirme a senha</label><input type="password" id="pw2" autocomplete="off"></div>
     </div>
+    <div id="bioUnlockWrap" hidden style="margin-bottom:14px">
+      <button class="pri" id="btnBioUnlock" style="font-size:16px;padding:12px 18px">👆 Desbloquear com Touch ID / Face ID</button>
+      <p class="hint">ou use a senha mestra abaixo</p>
+    </div>
     <p class="err" id="lockErr"></p>
-    <div class="row"><button class="pri" id="btnUnlock"></button></div>
+    <div class="row"><button id="btnUnlock"></button></div>
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <label for="importFile">Restaurar de um backup (.json exportado por esta página)</label>
     <input type="file" id="importFile" accept=".json,.txt,application/json,text/plain">
@@ -118,6 +122,15 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       </div>
       <p class="err" id="genWarn"></p>
       <textarea id="out" readonly></textarea>
+    </div>
+
+    <div class="card">
+      <h2>🔐 Desbloqueio por biometria</h2>
+      <p class="hint" id="bioStatus"></p>
+      <div id="bioList" style="margin:8px 0"></div>
+      <button id="btnBioEnroll">Ativar Touch ID / Face ID neste aparelho</button>
+      <p class="hint" id="bioMsg"></p>
+      <p class="hint">A senha mestra continua valendo como reserva. Cada aparelho/navegador é ativado separadamente.</p>
     </div>
 
     <!-- FORMULÁRIO -->
@@ -366,7 +379,7 @@ const DocParse = (() => {
   const { validCPF, fmtCPF } = DocParse;
   const $ = s => document.querySelector(s);
   const enc = new TextEncoder(), dec = new TextDecoder();
-  let state = { people: [] }, cryptoKey = null, salt = null, editingId = null, idleTimer = null;
+  let state = { people: [] }, editingId = null, idleTimer = null;
   const selected = new Set(), open = new Set();
 
   // ---------- utilidades ----------
@@ -396,59 +409,145 @@ const DocParse = (() => {
   }
 
   // ---------- criptografia ----------
-  async function deriveKey(pw, s) {
+  // Os dados são cifrados por uma chave aleatória (DEK). A DEK fica guardada "embrulhada" por:
+  //  • a senha mestra (PBKDF2) — sempre funciona, em qualquer aparelho;
+  //  • cada digital/Face ID cadastrada (passkey com extensão PRF) — a chave só sai com a biometria.
+  const rand = n => crypto.getRandomValues(new Uint8Array(n));
+  const aesKey = raw => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  async function pwKek(pw, s) {
     const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: s, iterations: 310000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
-  async function encryptState() {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(JSON.stringify(state)));
-    return { v: 1, salt: b64(salt), iv: b64(iv), ct: b64(ct) };
+  async function prfKek(out) {
+    const base = await crypto.subtle.importKey('raw', out, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: enc.encode('documentos-familia/biometria') }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
+  async function seal(key, bytes) { const iv = rand(12); return { iv: b64(iv), ct: b64(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes)) }; }
+  async function unseal(key, box) { return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(box.iv) }, key, unb64(box.ct))); }
+  let dek = null, dekRaw = null, vault = null;   // vault: { v:2, salt, pw, bio:[], bioSalt, data }
   async function save() {
-    const blob = await encryptState();
-    try { localStorage.setItem(KEY, JSON.stringify(blob)); }
+    vault.data = await seal(dek, enc.encode(JSON.stringify(state)));
+    try { localStorage.setItem(KEY, JSON.stringify(vault)); }
     catch { alert('Não foi possível salvar no navegador. Exporte um backup agora.'); }
   }
   function loadBlob() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+  async function openWith(raw, blob) {
+    dekRaw = raw; dek = await aesKey(raw); vault = blob;
+    state = JSON.parse(dec.decode(await unseal(dek, blob.data))); if (!Array.isArray(state.people)) state.people = [];
+  }
+  function enterApp() { $('#lock').hidden = true; $('#app').hidden = false; render(); renderBio(); resetIdle(); }
+
+  // ---------- biometria (Touch ID / Face ID) ----------
+  const bioSupported = () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
+  const deviceLabel = () => { const u = navigator.userAgent;
+    const dev = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android' : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Aparelho';
+    const br = /Edg\//.test(u) ? 'Edge' : /CriOS|Chrome\//.test(u) ? 'Chrome' : /Firefox|FxiOS/.test(u) ? 'Firefox' : /Safari/.test(u) ? 'Safari' : '';
+    return br ? `${dev} · ${br}` : dev; };
+  async function prfGet(ids, bioSalt) {
+    const cred = await navigator.credentials.get({ publicKey: {
+      challenge: rand(32), timeout: 60000, userVerification: 'required',
+      allowCredentials: ids.map(id => ({ type: 'public-key', id: unb64(id) })),
+      extensions: { prf: { eval: { first: bioSalt } } } } });
+    const out = cred.getClientExtensionResults().prf?.results?.first;
+    return { id: b64(cred.rawId), out };
+  }
+  async function bioUnlock(silent) {
+    const blob = loadBlob(), err = $('#lockErr');
+    if (!blob || blob.v !== 2 || !blob.bio?.length || !bioSupported()) return;
+    if (!silent) err.textContent = '';
+    try {
+      const { id, out } = await prfGet(blob.bio.map(b => b.id), unb64(blob.bioSalt));
+      if (!out) throw new Error('noprf');
+      const entry = blob.bio.find(b => b.id === id); if (!entry) throw new Error('unknown');
+      await openWith(await unseal(await prfKek(out), entry.wrap), blob);
+      enterApp();
+    } catch (e) {
+      dek = dekRaw = vault = null;
+      if (!silent && !(e && e.name === 'NotAllowedError')) err.textContent = 'A biometria não funcionou neste aparelho. Use a senha mestra.';
+    }
+  }
+  async function enrollBio() {
+    const msg = $('#bioMsg'); msg.textContent = '';
+    if (!bioSupported()) { msg.textContent = 'Este navegador não oferece biometria nesta página.'; return; }
+    const bioSalt = unb64(vault.bioSalt);
+    try {
+      const cred = await navigator.credentials.create({ publicKey: {
+        rp: { name: 'Documentos da Família' },
+        user: { id: rand(16), name: 'documentos-familia', displayName: 'Documentos da Família' },
+        challenge: rand(32), timeout: 60000,
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
+        extensions: { prf: { eval: { first: bioSalt } } } } });
+      const ext = cred.getClientExtensionResults().prf;
+      if (ext && ext.enabled === false) throw new Error('noprf');
+      let out = ext?.results?.first;
+      if (!out) out = (await prfGet([b64(cred.rawId)], bioSalt)).out;   // alguns navegadores só entregam a chave no login
+      if (!out) throw new Error('noprf');
+      vault.bio.push({ id: b64(cred.rawId), label: deviceLabel(), added: new Date().toISOString().slice(0, 10), wrap: await seal(await prfKek(out), dekRaw) });
+      await save(); renderBio(); toast('Biometria ativada neste aparelho');
+    } catch (e) {
+      if (e && e.name === 'NotAllowedError') { msg.textContent = 'Cancelado.'; return; }
+      msg.textContent = e && e.message === 'noprf'
+        ? 'Este navegador não consegue usar a biometria para proteger a chave (falta suporte a "PRF"). Atualize o Chrome ou o Safari. Se uma chave de acesso "Documentos da Família" foi criada, você pode apagá-la nas senhas do navegador.'
+        : 'Não foi possível ativar: ' + (e && e.message ? e.message : e);
+    }
+  }
+  function renderBio() {
+    const list = vault?.bio || [];
+    $('#bioStatus').textContent = list.length ? `Ativada em ${list.length} aparelho(s).` : 'Desativada — o app abre só com a senha mestra.';
+    $('#bioList').innerHTML = list.map(b => `<div class="field"><span>${esc(b.label)} · desde ${fmtDate(b.added)}</span><button class="sm danger" data-bio="${esc(b.id)}">Remover</button></div>`).join('');
+    $('#btnBioEnroll').hidden = !bioSupported();
+  }
+  $('#btnBioEnroll').onclick = enrollBio;
+  $('#bioList').onclick = async e => {
+    const id = e.target.dataset.bio; if (!id || !confirm('Remover a biometria deste aparelho? A senha mestra continua funcionando.')) return;
+    vault.bio = vault.bio.filter(b => b.id !== id); await save(); renderBio(); toast('Biometria removida');
+  };
+  $('#btnBioUnlock').onclick = () => bioUnlock(false);
 
   // ---------- bloqueio ----------
   function showLock() {
-    const exists = !!loadBlob();
+    const blob = loadBlob(), exists = !!blob, hasBio = !!(blob && blob.v === 2 && blob.bio?.length && bioSupported());
     $('#app').hidden = true; $('#lock').hidden = false; $('#formCard').hidden = true; $('#backupCard').hidden = true;
     $('#lockTitle').textContent = exists ? 'Desbloquear' : 'Criar senha mestra';
-    $('#lockMsg').textContent = exists ? 'Digite sua senha mestra.' : 'Escolha uma senha forte. Ela não pode ser recuperada: se esquecer, os dados não abrem.';
-    $('#pw2wrap').hidden = exists;
-    $('#btnUnlock').textContent = exists ? 'Desbloquear' : 'Criar e entrar';
+    $('#lockMsg').textContent = exists ? (hasBio ? 'Use Touch ID / Face ID ou a senha mestra.' : 'Digite sua senha mestra.') : 'Escolha uma senha forte. Ela não pode ser recuperada: se esquecer, os dados não abrem.';
+    $('#pw2wrap').hidden = exists; $('#bioUnlockWrap').hidden = !hasBio;
+    $('#btnUnlock').textContent = exists ? 'Desbloquear com senha' : 'Criar e entrar';
+    $('#btnUnlock').className = hasBio ? '' : 'pri';
     $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = '';
-    setTimeout(() => $('#pw1').focus(), 50);
+    if (!hasBio) setTimeout(() => $('#pw1').focus(), 50);
   }
   function lock() {
     closeOcr();
-    state = { people: [] }; cryptoKey = null; salt = null; editingId = null;
+    state = { people: [] }; dek = null; if (dekRaw) dekRaw.fill(0); dekRaw = null; vault = null; editingId = null;
     selected.clear(); open.clear(); $('#out').value = ''; $('#list').innerHTML = ''; $('#backupText').value = '';
     clearTimeout(idleTimer); showLock();
   }
-  function resetIdle() { clearTimeout(idleTimer); if (cryptoKey) idleTimer = setTimeout(lock, IDLE_MS); }
+  function resetIdle() { clearTimeout(idleTimer); if (dek) idleTimer = setTimeout(lock, IDLE_MS); }
   ['click', 'keydown', 'mousemove', 'touchstart'].forEach(ev => document.addEventListener(ev, resetIdle, { passive: true }));
 
   async function handleUnlock() {
     const err = $('#lockErr'); err.textContent = '';
-    if (!window.crypto || !crypto.subtle) { err.textContent = 'Este navegador não oferece criptografia aqui. Abra o arquivo no Chrome, Edge ou Firefox.'; return; }
+    if (!window.crypto || !crypto.subtle) { err.textContent = 'Este navegador não oferece criptografia aqui. Abra no Chrome, Edge, Safari ou Firefox.'; return; }
     const pw = $('#pw1').value; const blob = loadBlob();
     try {
-      if (blob) {
-        salt = unb64(blob.salt); cryptoKey = await deriveKey(pw, salt);
-        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, cryptoKey, unb64(blob.ct));
-        state = JSON.parse(dec.decode(pt)); if (!Array.isArray(state.people)) state.people = [];
-      } else {
+      if (!blob) {                                   // primeiro uso
         if (pw.length < 8) { err.textContent = 'Use pelo menos 8 caracteres.'; return; }
         if (pw !== $('#pw2').value) { err.textContent = 'As senhas não conferem.'; return; }
-        salt = crypto.getRandomValues(new Uint8Array(16)); cryptoKey = await deriveKey(pw, salt);
-        state = { people: [] }; await save();
+        const raw = rand(32), s = rand(16);
+        vault = { v: 2, salt: b64(s), pw: await seal(await pwKek(pw, s), raw), bio: [], bioSalt: b64(rand(32)) };
+        dekRaw = raw; dek = await aesKey(raw); state = { people: [] }; await save();
+      } else if (blob.v === 2) {
+        await openWith(await unseal(await pwKek(pw, unb64(blob.salt)), blob.pw), blob);
+      } else {                                       // formato antigo (v1): converte mantendo a mesma senha
+        const k = await pwKek(pw, unb64(blob.salt));
+        state = JSON.parse(dec.decode(await unseal(k, { iv: blob.iv, ct: blob.ct }))); if (!Array.isArray(state.people)) state.people = [];
+        const raw = rand(32), s = rand(16);
+        vault = { v: 2, salt: b64(s), pw: await seal(await pwKek(pw, s), raw), bio: [], bioSalt: b64(rand(32)) };
+        dekRaw = raw; dek = await aesKey(raw); await save();
       }
-    } catch { cryptoKey = null; err.textContent = 'Senha incorreta.'; return; }
-    $('#lock').hidden = true; $('#app').hidden = false; render(); resetIdle();
+    } catch { dek = dekRaw = vault = null; err.textContent = 'Senha incorreta.'; return; }
+    enterApp();
   }
   $('#btnUnlock').onclick = handleUnlock;
   $('#pw1').onkeydown = $('#pw2').onkeydown = e => { if (e.key === 'Enter') handleUnlock(); };
@@ -456,7 +555,7 @@ const DocParse = (() => {
 
   // ---------- backup ----------
   $('#btnExport').onclick = async () => {
-    const text = JSON.stringify(await encryptState());
+    await save(); const text = JSON.stringify(vault);
     const name = `backup-documentos-${new Date().toISOString().slice(0, 10)}.json`;
     // 1) Chrome/Edge: escolher onde salvar
     if (window.showSaveFilePicker) {
@@ -483,10 +582,10 @@ const DocParse = (() => {
   function importBlobText(txt) {
     try {
       const blob = JSON.parse(String(txt).trim());
-      if (!blob.salt || !blob.iv || !blob.ct) throw 0;
+      if (!blob.salt || !((blob.iv && blob.ct) || (blob.pw && blob.data))) throw 0;
       if (loadBlob() && !confirm('Isso substitui os dados atuais deste navegador pelo backup. Continuar?')) return;
       localStorage.setItem(KEY, JSON.stringify(blob)); showLock(); $('#importText').value = '';
-      $('#lockMsg').textContent = 'Backup carregado. Digite a senha que foi usada nele.';
+      $('#lockMsg').textContent = 'Backup carregado. Digite a senha que foi usada nele (ou use a biometria, se ela estava ativa).';
     } catch { $('#lockErr').textContent = 'Backup inválido.'; }
   }
   $('#importFile').onchange = async e => { const f = e.target.files[0]; if (f) importBlobText(await f.text()); e.target.value = ''; };
@@ -847,6 +946,7 @@ const DocParse = (() => {
   $('#btnCopyOut').onclick = () => { if ($('#out').value) copy($('#out').value); };
 
   showLock();
+  bioUnlock(true);   // tenta a biometria ao abrir; se o navegador exigir um clique, o botão está na tela
 })();
 </script>
 </body>
