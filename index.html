@@ -51,6 +51,9 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
 [hidden]{display:none!important}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
 .toast.on{opacity:1}
+.out{white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;min-height:120px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow-wrap:anywhere}
+.out:empty{display:none}
+.out mark{background:transparent;color:var(--err);font-weight:700}
 .qmap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 12px;align-items:center;margin:10px 0}
 .qmap .q{font-size:13px;overflow-wrap:anywhere}
 .qmap select{padding:5px 8px;font-size:13px}
@@ -135,7 +138,7 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       </div>
       <p class="err" id="genWarn"></p>
       <div id="qMissing" hidden style="margin-bottom:10px"></div>
-      <textarea id="out" readonly></textarea>
+      <div id="out" class="out" aria-live="polite"></div>
       <details style="margin-top:10px">
         <summary>Dicas</summary>
         <p class="hint">• Perguntas que não estão no cadastro (matrícula, cargo, estado civil…) podem virar <b>campos extras</b> da pessoa: o app oferece criá-los depois de preencher.<br>
@@ -403,6 +406,7 @@ const Questionario = (() => {
     ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF'], ['cep', 'CEP'], ['obs', 'Observações']
   ];
   const LABEL = Object.fromEntries(CAMPOS);
+  const MARCA = '!!! PREENCHER MANUALMENTE !!!';
 
   // sinônimos (já normalizados: minúsculas, sem acento, só letras/números). A expressão mais longa vence.
   // '@nao' = assunto que existe em formulários, mas não está no cadastro (evita responder errado).
@@ -534,7 +538,7 @@ const Questionario = (() => {
   function juntar(p, campos, mods) {
     const partes = [];
     campos.forEach((k, i) => {
-      const v = valor(p, k, mods); if (!v) return;
+      const v = valor(p, k, mods) || (campos.length > 1 ? MARCA : ''); if (!v) return;
       if (k === 'uf' && campos[i - 1] === 'cidade' && partes.length) { partes[partes.length - 1] += '/' + v; return; }
       partes.push(/Validade$/.test(k) && campos.length > 1 ? (mods.en ? 'exp. ' : 'validade ') + v : v);
     });
@@ -586,8 +590,8 @@ const Questionario = (() => {
   }
 
   function responder(pl, v, linha) {
-    if (!v) return pl.temDois ? pl.perg.replace(/\s+$/, '') : linha;
     const b = pl.perg.replace(/\s+$/, '');
+    if (!v) v = MARCA;
     return /[:?：]$/.test(b) ? b + ' ' + v : b + ': ' + v;
   }
 
@@ -598,14 +602,14 @@ const Questionario = (() => {
       const pl = plano(l, escolhas[chave(l)], p);
       if (pl.tipo === 'vazia') return l;
       if (pl.tipo === 'marcadores') return l.replace(/\{([^}]+)\}/g, (m, nome) => {
-        const ex = extraDe(p, nome); if (ex && norm(ex.rotulo).trim() === norm(nome).trim()) { if (!ex.valor) faltando.push(ex.rotulo); return ex.valor || ''; }
-        const k = chaveMarcador(nome); if (!k) { semResposta.push(m); return m; }
-        const v = valor(p, k, analisar(l).mods); if (!v) faltando.push(LABEL[k]); return v;
+        const ex = extraDe(p, nome); if (ex && norm(ex.rotulo).trim() === norm(nome).trim()) { if (!ex.valor) faltando.push(ex.rotulo); return ex.valor || MARCA; }
+        const k = chaveMarcador(nome); if (!k) { semResposta.push(m); return MARCA; }
+        const v = valor(p, k, analisar(l).mods); if (!v) faltando.push(LABEL[k]); return v || MARCA;
       });
       if (pl.tipo === 'texto') {
         if (!pl.pergunta || pl.manual) return l;
         semResposta.push(pl.perg.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[:：]\s*$/, '').trim());
-        return pl.temDois ? pl.perg.replace(/\s+$/, '') : l;   // tira a resposta antiga, se o formulário colado já vinha preenchido
+        return responder(pl, '', l);   // pergunta sem dado: marca para preencher à mão (e tira a resposta antiga, se havia)
       }
       if (pl.tipo === 'extra') {
         const e = ((p && p.extras) || []).find(x => norm(x.rotulo).trim() === norm(pl.rotulo).trim());
@@ -645,7 +649,7 @@ const Questionario = (() => {
       'Nome completo:\nCPF:\nRG e órgão emissor:\nData de nascimento:\nE-mail:\nTelefone:\nEndereço completo:' }
   ];
 
-  return { CAMPOS, LABEL, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
+  return { CAMPOS, LABEL, MARCA, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
 })();
 </script>
 
@@ -726,7 +730,7 @@ const Questionario = (() => {
   function enterApp() {
     $('#lock').hidden = true; $('#app').hidden = false; render(); renderBio(); resetIdle();
     const u = state.qUltimo || {}; $('#qText').value = u.texto || ''; qEscolhas = { ...(u.escolhas || {}) }; qModelId = u.modelo || '';
-    $('#out').value = ''; $('#genWarn').textContent = ''; $('#qMissing').hidden = true; renderModelos(); renderMapa();
+    setOut(''); $('#genWarn').textContent = ''; $('#qMissing').hidden = true; renderModelos(); renderMapa();
   }
 
   // ---------- biometria (Touch ID / Face ID) ----------
@@ -812,7 +816,7 @@ const Questionario = (() => {
   function lock() {
     closeOcr();
     state = { people: [] }; dek = null; if (dekRaw) dekRaw.fill(0); dekRaw = null; vault = null; editingId = null;
-    selected.clear(); open.clear(); $('#out').value = ''; $('#list').innerHTML = ''; $('#backupText').value = '';
+    selected.clear(); open.clear(); setOut(''); $('#list').innerHTML = ''; $('#backupText').value = '';
     $('#qText').value = ''; $('#qMap').innerHTML = ''; $('#qMissing').innerHTML = ''; $('#qMissing').hidden = true; $('#extras').innerHTML = ''; qEscolhas = {}; qModelId = '';
     clearTimeout(idleTimer); showLock();
   }
@@ -1218,6 +1222,11 @@ const Questionario = (() => {
   }
 
   // ---------- questionário (perguntas livres → cadastro) ----------
+  let outText = '';
+  function setOut(t) {
+    outText = t;
+    $('#out').innerHTML = esc(t).split(esc(Questionario.MARCA)).join(`<mark>${esc(Questionario.MARCA)}</mark>`);
+  }
   const Q = Questionario;
   let qEscolhas = {}, qModelId = '';
   const todosModelos = () => [...Q.MODELOS.map(m => ({ ...m, fixo: true })), ...(state.modelos || [])];
@@ -1229,7 +1238,7 @@ const Questionario = (() => {
   }
   $('#qModel').onchange = e => {
     const m = todosModelos().find(x => x.id === e.target.value); qModelId = m ? m.id : '';
-    if (m) { $('#qText').value = m.texto; qEscolhas = { ...(m.escolhas || {}) }; $('#out').value = ''; $('#genWarn').textContent = ''; $('#qMissing').hidden = true; }
+    if (m) { $('#qText').value = m.texto; qEscolhas = { ...(m.escolhas || {}) }; setOut(''); $('#genWarn').textContent = ''; $('#qMissing').hidden = true; }
     renderModelos(); renderMapa();
   };
   $('#btnSaveModel').onclick = async () => {
@@ -1279,7 +1288,7 @@ const Questionario = (() => {
   let mapaTimer = null;
   $('#qText').oninput = () => { clearTimeout(mapaTimer); mapaTimer = setTimeout(renderMapa, 300); };
   $('#qMap').onchange = e => { const k = e.target.dataset.qk; if (k === undefined) return;
-    if (e.target.value === 'auto') delete qEscolhas[k]; else qEscolhas[k] = e.target.value; renderMapa(); if ($('#out').value) gerar(); };
+    if (e.target.value === 'auto') delete qEscolhas[k]; else qEscolhas[k] = e.target.value; renderMapa(); if (outText) gerar(); };
   $('#list').addEventListener('change', () => renderMapa());
 
   function gerar() {
@@ -1287,8 +1296,8 @@ const Questionario = (() => {
     const ppl = state.people.filter(p => selected.has(p.id));
     const warn = [];
     $('#qMissing').hidden = true;
-    if (!texto.trim()) { $('#genWarn').textContent = 'Cole as perguntas ou escolha um modelo.'; $('#out').value = ''; return; }
-    if (!ppl.length) { $('#genWarn').textContent = 'Marque ao menos uma pessoa na lista.'; $('#out').value = ''; return; }
+    if (!texto.trim()) { $('#genWarn').textContent = 'Cole as perguntas ou escolha um modelo.'; setOut(''); return; }
+    if (!ppl.length) { $('#genWarn').textContent = 'Marque ao menos uma pessoa na lista.'; setOut(''); return; }
     const blocos = [], semResp = new Set();
     for (const p of ppl) {
       const r = Q.preencher(texto, p, qEscolhas);
@@ -1301,7 +1310,7 @@ const Questionario = (() => {
       }
     }
     $('#genWarn').textContent = warn.join(' · ');
-    $('#out').value = blocos.join('\n\n');
+    setOut(blocos.join('\n\n'));
     // perguntas sem campo: oferecer criar como campos extras
     const novos = Q.perguntasSemCampo(texto, refPessoa(), qEscolhas);
     if (novos.length) {
@@ -1328,7 +1337,7 @@ const Questionario = (() => {
     }
   }
   $('#btnGen').onclick = gerar;
-  $('#btnCopyOut').onclick = () => { if ($('#out').value) copy($('#out').value); };
+  $('#btnCopyOut').onclick = () => { if (outText) copy(outText); };
 
   showLock();
   bioUnlock(true);   // tenta a biometria ao abrir; se o navegador exigir um clique, o botão está na tela
