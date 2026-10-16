@@ -194,6 +194,7 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
         <div><label>Sexo</label><select id="f_sexo"><option value="">—</option><option>Feminino</option><option>Masculino</option></select></div>
         <div><label>E-mail</label><input id="f_email" type="email"></div>
         <div><label>Celular</label><input id="f_celular" inputmode="tel" placeholder="(61) 99999-9999"></div>
+        <div><label>País de residência</label><select id="f_pais"><option value="BR">Brasil</option><option value="CA">Canadá</option><option value="US">Estados Unidos</option><option value="PT">Portugal</option><option value="OUTRO">Outro</option></select></div>
       </div>
       <h3>Identidade</h3>
       <div class="grid">
@@ -204,6 +205,23 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       <div class="grid">
         <div><label>Número</label><input id="f_passaporte" style="text-transform:uppercase"></div>
         <div><label>Validade</label><input id="f_passaporteValidade" type="date"></div>
+        <div><label>País emissor</label><input id="f_passaportePais" list="paisesDoc" maxlength="3" style="text-transform:uppercase" placeholder="BRA"></div>
+      </div>
+      <details id="pass2Wrap" style="margin-top:10px">
+        <summary>Segundo passaporte (dupla cidadania)</summary>
+        <div class="grid" style="margin-top:8px">
+          <div><label>Número</label><input id="f_passaporte2" style="text-transform:uppercase"></div>
+          <div><label>Validade</label><input id="f_passaporte2Validade" type="date"></div>
+          <div><label>País emissor</label><input id="f_passaporte2Pais" list="paisesDoc" maxlength="3" style="text-transform:uppercase" placeholder="CAN"></div>
+        </div>
+      </details>
+      <datalist id="paisesDoc"><option value="BRA">Brasil</option><option value="CAN">Canadá</option><option value="USA">Estados Unidos</option><option value="PRT">Portugal</option><option value="ITA">Itália</option><option value="ESP">Espanha</option><option value="D">Alemanha</option><option value="FRA">França</option><option value="GBR">Reino Unido</option></datalist>
+      <div id="caDocs" hidden>
+        <h3>Canadá</h3>
+        <div class="grid">
+          <div><label>SIN – Social Insurance Number</label><input id="f_sin" inputmode="numeric" placeholder="000 000 000"><p class="err" id="sinErr"></p></div>
+        </div>
+        <p class="hint">Outros documentos canadenses (carteira de motorista, health card, PR card…) podem entrar em “Campos extras”.</p>
       </div>
       <h3>Visto americano</h3>
       <div class="grid">
@@ -216,16 +234,16 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
         <select id="addrFrom" style="width:auto;flex:1;min-width:200px"><option value="">Copiar endereço de outra pessoa…</option></select>
       </div>
       <div class="grid">
-        <div><label>CEP</label>
+        <div><label id="lblCep">CEP</label>
           <div class="row" style="flex-wrap:nowrap"><input id="f_cep" inputmode="numeric" placeholder="00000-000"><button id="btnCep" title="Buscar endereço pelo CEP">Buscar</button></div>
           <p class="hint" id="cepMsg">Ao digitar o CEP, o endereço é preenchido (consulta só o CEP no ViaCEP).</p>
         </div>
-        <div class="full"><label>Logradouro (rua, quadra, avenida)</label><input id="f_logradouro" placeholder="SQS 308 Bloco A / Rua das Flores"></div>
-        <div><label>Número</label><input id="f_numero"></div>
-        <div><label>Complemento</label><input id="f_complemento" placeholder="Apto 101"></div>
-        <div><label>Bairro</label><input id="f_bairro"></div>
+        <div class="full"><label id="lblLogr">Logradouro (rua, quadra, avenida)</label><input id="f_logradouro" placeholder="SQS 308 Bloco A / Rua das Flores"></div>
+        <div><label id="lblNum">Número</label><input id="f_numero"></div>
+        <div><label id="lblCompl">Complemento</label><input id="f_complemento" placeholder="Apto 101"></div>
+        <div id="bairroWrap"><label>Bairro</label><input id="f_bairro"></div>
         <div><label>Cidade</label><input id="f_cidade"></div>
-        <div><label>UF</label><input id="f_uf" maxlength="2" style="text-transform:uppercase" placeholder="DF"></div>
+        <div><label id="lblUf">UF</label><input id="f_uf" maxlength="2" list="ufList" style="text-transform:uppercase" placeholder="DF"><datalist id="ufList"></datalist></div>
       </div>
       <h3>Outros</h3>
       <div class="grid">
@@ -441,17 +459,22 @@ const Questionario = (() => {
     ['email', 'E-mail'], ['celular', 'Celular'], ['rg', 'RG / CIN'], ['rgOrgao', 'Órgão emissor do RG'],
     ['passaporte', 'Nº do passaporte'], ['passaporteValidade', 'Validade do passaporte'],
     ['vistoEua', 'Nº do visto americano'], ['vistoEuaTipo', 'Tipo do visto americano'], ['vistoEuaValidade', 'Validade do visto americano'],
+    ['pais', 'País de residência'], ['passaportePais', 'País do passaporte'],
+    ['passaporte2', 'Nº do 2º passaporte'], ['passaporte2Validade', 'Validade do 2º passaporte'], ['passaporte2Pais', 'País do 2º passaporte'],
+    ['sin', 'SIN (Canadá)'],
     ['endereco', 'Endereço completo'], ['logradouro', 'Logradouro'], ['numero', 'Número (endereço)'], ['complemento', 'Complemento'],
     ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF'], ['cep', 'CEP'], ['obs', 'Observações']
   ];
-  const LABEL = Object.fromEntries(CAMPOS);
+  const LABEL = new Proxy(Object.fromEntries(CAMPOS), { get: (o, k) => k in o ? o[k]
+    : typeof k === 'string' && k.startsWith('passaporte@') ? 'Passaporte ' + k.slice(11)
+    : typeof k === 'string' && k.startsWith('passaporteValidade@') ? 'Validade do passaporte ' + k.slice(19) : undefined });
   const MARCA = '!!! PREENCHER MANUALMENTE !!!';
 
   // sinônimos (já normalizados: minúsculas, sem acento, só letras/números). A expressão mais longa vence.
   // '@nao' = assunto que existe em formulários, mas não está no cadastro (evita responder errado).
   // '@validade', '@tipo', '@numero' = palavras genéricas resolvidas pelo documento citado na mesma linha.
   const REGRAS = {
-    '@nao': ['nome da mae', 'nome do pai', 'nome de mae', 'filiacao', 'nome social', 'nome do responsavel', 'nome da empresa',
+    '@nao': ['nome da mae', 'nome do pai', 'nome dos pais', 'dos pais', 'nomes dos pais', 'nome de mae', 'filiacao', 'nome social', 'nome do responsavel', 'nome da empresa',
       'nome do contato', 'contato de emergencia', 'telefone de emergencia', 'telefone comercial', 'telefone fixo', 'telefone residencial',
       'estado civil', 'cidade de nascimento', 'local de nascimento', 'naturalidade', 'pais de nascimento', 'estado de nascimento',
       'uf de nascimento', 'data de emissao', 'data da emissao', 'emissao', 'profissao', 'ocupacao', 'renda', 'titulo de eleitor', 'cnh',
@@ -484,12 +507,22 @@ const Questionario = (() => {
       'expiry', 'expiration', 'expiration date', 'expiry date', 'valid until', 'exp'],
     '@tipo': ['tipo', 'classe', 'categoria', 'type', 'class'],
     '@numero': ['numero', 'nr', 'n', 'num', 'nro', 'number'],
+    pais: ['pais', 'pais de residencia', 'pais onde mora', 'pais onde reside', 'country', 'country of residence'],
+    passaportePais: ['pais emissor', 'pais emissor do passaporte', 'pais do passaporte', 'issuing country', 'country of issue'],
+    passaporte2: ['segundo passaporte', 'outro passaporte', '2o passaporte', 'second passport'],
+    passaporte2Validade: ['validade do segundo passaporte', 'validade do outro passaporte'],
+    '@pass:BRA': ['passaporte brasileiro', 'brazilian passport'],
+    '@pass:CAN': ['passaporte canadense', 'canadian passport'],
+    '@pass:USA': ['passaporte americano', 'passaporte norte americano', 'us passport'],
+    '@pass:PRT': ['passaporte portugues', 'portuguese passport'],
+    '@pass:ITA': ['passaporte italiano', 'italian passport'],
+    sin: ['sin', 'social insurance number', 'numero de seguro social', 'numero d assurance sociale', 'sin number'],
     endereco: ['endereco', 'endereco completo', 'endereco residencial', 'endereco de residencia', 'residencia', 'address', 'home address', 'morada'],
     logradouro: ['logradouro', 'rua', 'avenida', 'quadra', 'street'],
     complemento: ['complemento', 'apto', 'apartamento', 'apt', 'complement'],
     bairro: ['bairro', 'setor', 'neighborhood'],
     cidade: ['cidade', 'municipio', 'localidade', 'city'],
-    uf: ['uf', 'estado', 'state'],
+    uf: ['uf', 'estado', 'state', 'provincia', 'province', 'estado provincia', 'state province', 'province state'],
     cep: ['cep', 'codigo postal', 'codigo de enderecamento postal', 'zip', 'zip code', 'postal code'],
     obs: ['observacoes', 'observacao', 'obs']
   };
@@ -497,9 +530,11 @@ const Questionario = (() => {
     'birth date', 'birthdate', 'dob', 'birthday', 'age', 'nationality', 'citizenship', 'sex', 'gender', 'phone', 'mobile', 'cell', 'cellphone',
     'phone number', 'telephone', 'mobile number', 'address', 'home address', 'passport', 'passport number', 'passport expiry',
     'passport expiration', 'passport expiration date', 'passport expiry date', 'visa', 'us visa', 'visa number', 'visa type', 'visa class',
-    'visa expiration', 'visa expiry', 'visa expiration date', 'street', 'city', 'state', 'zip', 'zip code', 'postal code', 'neighborhood']);
+    'visa expiration', 'visa expiry', 'visa expiration date', 'street', 'city', 'state', 'zip', 'zip code', 'postal code', 'neighborhood',
+    'country', 'country of residence', 'issuing country', 'country of issue', 'second passport', 'canadian passport', 'brazilian passport',
+    'us passport', 'portuguese passport', 'italian passport', 'social insurance number', 'province', 'state province', 'province state']);
   const FRASES = Object.entries(REGRAS).flatMap(([k, fs]) => fs.map(f => ({ k, f: ' ' + f + ' ' })));
-  const ADDR = ['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'cep'];
+  const ADDR = ['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'cep', 'pais'];
 
   function achar(n) {   // todas as ocorrências, sem as que estão dentro de uma expressão mais longa
     const hits = [];
@@ -526,12 +561,14 @@ const Questionario = (() => {
     if (temFora) { const dentro = new Set(achar(fora).map(h => h.f + '|' + h.k)); hits = hits.filter(h => h.k.startsWith('@') || dentro.has(h.f + '|' + h.k)); }
     mods.en = hits.some(h => EN.has(h.f));
     if (hits.some(h => h.k === '@nao')) return { campos: [], nao: true, mods };
-    const ks = hits.map(h => h.k);
+    const ks = hits.map(h => h.k).map(k => k.startsWith('@pass:') ? 'passaporte@' + k.slice(6) : k);
+    const passPais = ks.find(k => k.startsWith('passaporte@')), temPass2 = ks.includes('passaporte2');
     const temVisto = ks.some(k => k.startsWith('vistoEua')), temPass = ks.some(k => k.startsWith('passaporte'));
     const temDoc = temVisto || temPass || ks.includes('rg') || ks.includes('cpf');
     let out = [];
     for (const k of ks) {
-      if (k === '@validade') { if (temVisto) out.push('vistoEuaValidade'); else if (temPass) out.push('passaporteValidade'); }
+      if (k === '@validade') { if (temVisto) out.push('vistoEuaValidade'); else if (passPais) out.push(passPais.replace('passaporte@', 'passaporteValidade@'));
+        else if (temPass2) out.push('passaporte2Validade'); else if (temPass) out.push('passaporteValidade'); }
       else if (k === '@tipo') { if (temVisto) out.push('vistoEuaTipo'); }
       else if (k === '@numero') { if (!temDoc && ks.length === 1) out.push('numero'); else if (!temDoc && ks.some(x => ADDR.includes(x)) && !ks.includes('endereco')) out.push('numero'); }
       else out.push(k);
@@ -544,13 +581,31 @@ const Questionario = (() => {
   const fmtD = (iso, m) => { if (!iso) return ''; const [y, mo, d] = iso.split('-'); return m === 'us' ? `${mo}/${d}/${y}` : m === 'iso' ? iso : `${d}/${mo}/${y}`; };
   function idade(iso) { if (!iso) return ''; const b = new Date(iso + 'T00:00:00'), t = new Date(); let a = t.getFullYear() - b.getFullYear();
     if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) a--; return String(a); }
-  function enderecoCompleto(p) {
-    const l1 = [p.logradouro, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' – ' + p.complemento : '');
-    const city = [p.cidade, p.uf].filter(Boolean).join('/');
-    return [l1, p.bairro, city, p.cep ? 'CEP ' + p.cep : ''].filter(Boolean).join(' – ');
+  const PAISES = { BR: { nome: 'Brasil', en: 'Brazil', ddi: '+55', iso3: 'BRA' }, CA: { nome: 'Canadá', en: 'Canada', ddi: '+1', iso3: 'CAN' },
+    US: { nome: 'Estados Unidos', en: 'United States', ddi: '+1', iso3: 'USA' }, PT: { nome: 'Portugal', en: 'Portugal', ddi: '+351', iso3: 'PRT' } };
+  const paisDe = p => (p && p.pais) || 'BR';
+  // endereço no formato do país: Brasil "Rua, nº – compl – bairro – Cidade/UF – CEP"; Canadá/EUA "nº Rua, Unit – Cidade, PROV A1A 1A1 – Canadá"
+  function enderecoCompleto(p, en) {
+    const pais = paisDe(p);
+    if (pais === 'BR') {
+      const l1 = [p.logradouro, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' – ' + p.complemento : '');
+      const city = [p.cidade, p.uf].filter(Boolean).join('/');
+      return [l1, p.bairro, city, p.cep ? 'CEP ' + p.cep : '', en ? 'Brazil' : ''].filter(Boolean).join(' – ');
+    }
+    const l1 = [[p.numero, p.logradouro].filter(Boolean).join(' '), p.complemento].filter(Boolean).join(', ');
+    const l2 = [p.cidade, [p.uf, p.cep].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    const nomePais = PAISES[pais] ? (en ? PAISES[pais].en : PAISES[pais].nome) : '';
+    return [l1, p.bairro, l2, nomePais].filter(Boolean).join(' – ');
+  }
+  // passaporte de um país (BRA, CAN…): procura no 1º e no 2º passaporte
+  function passaporteDo(p, iso3) {
+    const p1 = (p.passaportePais || (p.passaporte ? 'BRA' : '')).toUpperCase(), p2 = (p.passaporte2Pais || '').toUpperCase();
+    if (p.passaporte && p1 === iso3) return { n: p.passaporte, v: p.passaporteValidade };
+    if (p.passaporte2 && p2 === iso3) return { n: p.passaporte2, v: p.passaporte2Validade };
+    return { n: '', v: '' };
   }
   const NAC_EN = { brasileira: 'Brazilian', brasileiro: 'Brazilian', americana: 'American', americano: 'American', portuguesa: 'Portuguese',
-    portugues: 'Portuguese', italiana: 'Italian', italiano: 'Italian', espanhola: 'Spanish', espanhol: 'Spanish', argentina: 'Argentinian',
+    portugues: 'Portuguese', canadense: 'Canadian', italiana: 'Italian', italiano: 'Italian', espanhola: 'Spanish', espanhol: 'Spanish', argentina: 'Argentinian',
     argentino: 'Argentinian', alema: 'German', alemao: 'German', francesa: 'French', frances: 'French' };
 
   function valor(p, k, mods = {}) {
@@ -560,13 +615,20 @@ const Questionario = (() => {
       case 'primeiroNome': v = nome[0] || ''; break;
       case 'sobrenome': v = nome.slice(1).join(' '); break;
       case 'ultimoSobrenome': v = nome.length > 1 ? nome[nome.length - 1] : ''; break;
-      case 'nascimento': case 'passaporteValidade': case 'vistoEuaValidade': v = fmtD(p[k], mods.data); break;
+      case 'nascimento': case 'passaporteValidade': case 'vistoEuaValidade': case 'passaporte2Validade': v = fmtD(p[k], mods.data); break;
+      case 'pais': { const c = PAISES[paisDe(p)]; v = c ? (mods.en ? c.en : c.nome) : ''; break; }
+      case 'passaportePais': v = p.passaporte ? (p.passaportePais || 'BRA') : ''; break;
       case 'idade': v = idade(p.nascimento); break;
-      case 'endereco': v = enderecoCompleto(p); break;
+      case 'endereco': v = enderecoCompleto(p, mods.en); break;
       case 'sexo': v = p.sexo || ''; if (v && mods.mf) v = v[0].toUpperCase(); else if (v && mods.en) v = /^f/i.test(v) ? 'Female' : 'Male'; break;
       case 'nacionalidade': v = p.nacionalidade || ''; if (v && mods.en) v = NAC_EN[norm(v).trim()] || v; break;
-      case 'celular': v = p.celular || ''; if (v && mods.ddi && !/^\+/.test(v)) v = '+55 ' + v; break;
-      default: v = p[k] == null ? '' : String(p[k]);
+      case 'celular': { v = p.celular || ''; const c = PAISES[paisDe(p)];
+        // quem mora fora sempre sai com DDI (um número canadense sem +1 confunde num formulário brasileiro)
+        if (v && !/^\+/.test(v) && c && (mods.ddi || paisDe(p) !== 'BR')) v = c.ddi + ' ' + v; break; }
+      default:
+        if (k.startsWith('passaporte@')) { v = passaporteDo(p, k.split('@')[1]).n; break; }
+        if (k.startsWith('passaporteValidade@')) { v = fmtD(passaporteDo(p, k.split('@')[1]).v, mods.data); break; }
+        v = p[k] == null ? '' : String(p[k]);
     }
     if (mods.digitos && !['nome', 'primeiroNome', 'sobrenome', 'ultimoSobrenome', 'email', 'sexo', 'nacionalidade', 'endereco', 'obs'].includes(k)) v = v.replace(/\D/g, '');
     if (mods.maiusc) v = v.toUpperCase();
@@ -576,10 +638,11 @@ const Questionario = (() => {
   // junta vários campos pedidos na mesma linha ("Nr Passaporte e Validade" → "AB123 – validade 01/02/2030")
   function juntar(p, campos, mods) {
     const partes = [];
+    if (!campos.some(k => valor(p, k, mods))) return '';   // nada cadastrado: uma marca só, na linha toda
     campos.forEach((k, i) => {
       const v = valor(p, k, mods) || (campos.length > 1 ? MARCA : ''); if (!v) return;
       if (k === 'uf' && campos[i - 1] === 'cidade' && partes.length) { partes[partes.length - 1] += '/' + v; return; }
-      partes.push(/Validade$/.test(k) && campos.length > 1 ? (mods.en ? 'exp. ' : 'validade ') + v : v);
+      partes.push(/Validade($|@)/.test(k) && campos.length > 1 ? (mods.en ? 'exp. ' : 'validade ') + v : v);
     });
     return partes.join(' – ');
   }
@@ -688,7 +751,7 @@ const Questionario = (() => {
       'Nome completo:\nCPF:\nRG e órgão emissor:\nData de nascimento:\nE-mail:\nTelefone:\nEndereço completo:' }
   ];
 
-  return { CAMPOS, LABEL, MARCA, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
+  return { CAMPOS, LABEL, MARCA, PAISES, enderecoCompleto, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
 })();
 </script>
 
@@ -698,15 +761,26 @@ const Questionario = (() => {
   const IDLE_MS = 5 * 60 * 1000;
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   const TESS_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
-  const FIELDS = ['nome','cpf','nascimento','nacionalidade','sexo','email','celular','rg','rgOrgao','passaporte','passaporteValidade','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
-  const ADDR = ['cep','logradouro','numero','complemento','bairro','cidade','uf'];
+  const FIELDS = ['nome','cpf','nascimento','nacionalidade','sexo','email','celular','pais','rg','rgOrgao','passaporte','passaporteValidade','passaportePais','passaporte2','passaporte2Validade','passaporte2Pais','sin','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
+  const ADDR = ['pais','cep','logradouro','numero','complemento','bairro','cidade','uf'];
   const fmtCEP = v => { const d = String(v).replace(/\D/g, '').slice(0, 8); return d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; };
-  function fullAddress(p) {
-    const l1 = [p.logradouro, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' – ' + p.complemento : '');
-    const city = [p.cidade, p.uf].filter(Boolean).join('/');
-    return [l1, p.bairro, city, p.cep ? 'CEP ' + p.cep : ''].filter(Boolean).join(' – ');
+  const fullAddress = p => Questionario.enderecoCompleto(p);
+  const DATE_FIELDS = new Set(['nascimento', 'passaporteValidade', 'passaporte2Validade', 'vistoEuaValidade']);
+  // códigos postais: Brasil 00000-000 · Canadá A1A 1A1 · EUA 00000(-0000)
+  function fmtPostal(v, pais) {
+    if (pais === 'BR') return fmtCEP(v);
+    const a = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (pais === 'CA') return a.length === 6 ? a.slice(0, 3) + ' ' + a.slice(3) : String(v || '').toUpperCase().trim();
+    if (pais === 'US') return /^\d{9}$/.test(a) ? a.slice(0, 5) + '-' + a.slice(5) : String(v || '').trim();
+    return String(v || '').trim();
   }
-  const DATE_FIELDS = new Set(['nascimento', 'passaporteValidade', 'vistoEuaValidade']);
+  const validPostalCA = v => /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] \d[ABCEGHJ-NPRSTV-Z]\d$/.test(v);
+  // SIN canadense: 9 dígitos, verificação de Luhn
+  function validSIN(v) { const d = String(v).replace(/\D/g, ''); if (d.length !== 9 || /^0/.test(d)) return false;
+    let t = 0; for (let i = 0; i < 9; i++) { let x = +d[i] * (i % 2 ? 2 : 1); if (x > 9) x -= 9; t += x; } return t % 10 === 0; }
+  const fmtSIN = v => { const d = String(v).replace(/\D/g, '').slice(0, 9); return d.replace(/(\d{3})(\d)/, '$1 $2').replace(/(\d{3}) (\d{3})(\d)/, '$1 $2 $3'); };
+  const PROV_CA = [['AB','Alberta'],['BC','British Columbia'],['MB','Manitoba'],['NB','New Brunswick'],['NL','Newfoundland and Labrador'],['NS','Nova Scotia'],['NT','Northwest Territories'],['NU','Nunavut'],['ON','Ontario'],['PE','Prince Edward Island'],['QC','Québec'],['SK','Saskatchewan'],['YT','Yukon']];
+  const UF_BR = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
   const { validCPF, fmtCPF } = DocParse;
   const $ = s => document.querySelector(s);
   const enc = new TextEncoder(), dec = new TextDecoder();
@@ -722,9 +796,20 @@ const Questionario = (() => {
   const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 1800); }
 
-  function fmtPhone(v) {
-    const d = v.replace(/\D/g, ''); if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return v.trim();
+  // telefone no padrão do país de residência. Número digitado com "+" (DDI) é respeitado.
+  function fmtPhone(v, pais = 'BR') {
+    v = String(v || '').trim(); let d = v.replace(/\D/g, '');
+    const br = x => x.length === 11 ? `(${x.slice(0,2)}) ${x.slice(2,7)}-${x.slice(7)}` : x.length === 10 ? `(${x.slice(0,2)}) ${x.slice(2,6)}-${x.slice(6)}` : '';
+    const nanp = x => x.length === 10 ? `(${x.slice(0,3)}) ${x.slice(3,6)}-${x.slice(6)}` : '';
+    if (/^\+/.test(v)) {
+      if (d.startsWith('55') && br(d.slice(2))) return '+55 ' + br(d.slice(2));
+      if (d.startsWith('1') && nanp(d.slice(1))) return '+1 ' + nanp(d.slice(1));
+      return v;
+    }
+    if (pais === 'CA' || pais === 'US') { if (d.length === 11 && d[0] === '1') d = d.slice(1); return nanp(d) || v; }
+    if (pais === 'PT') return d.length === 9 ? `${d.slice(0,3)} ${d.slice(3,6)} ${d.slice(6)}` : v;
+    if (pais === 'BR') return br(d) || v;
+    return v;
   }
   function expStatus(iso, label, sixMonths) {
     if (!iso) return null;
@@ -935,13 +1020,16 @@ const Questionario = (() => {
     const list = $('#list'); const ppl = state.people;   // a ordem é a da lista guardada (definida pelo usuário)
     $('#emptyHint').hidden = ppl.length > 0;
     list.innerHTML = ppl.map(p => {
-      const badges = [expStatus(p.passaporteValidade, 'passaporte', true), expStatus(p.vistoEuaValidade, 'visto EUA', false)].filter(Boolean);
+      const badges = [expStatus(p.passaporteValidade, 'passaporte' + (p.passaportePais && p.passaportePais !== 'BRA' ? ' ' + p.passaportePais : ''), true),
+        expStatus(p.passaporte2Validade, 'passaporte ' + (p.passaporte2Pais || '2'), true), expStatus(p.vistoEuaValidade, 'visto EUA', false)].filter(Boolean);
       const rows = [
         ['CPF', p.cpf], ['Nascimento', fmtDate(p.nascimento)], ['Nacionalidade', p.nacionalidade], ['Sexo', p.sexo],
-        ['E-mail', p.email], ['Celular', p.celular], ['RG/CIN', [p.rg, p.rgOrgao].filter(Boolean).join(' – ')],
-        ['Passaporte', p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
+        ['E-mail', p.email], ['Celular', p.celular], ['País de residência', p.pais && p.pais !== 'BR' ? (Questionario.PAISES[p.pais] || {}).nome || p.pais : ''],
+        ['RG/CIN', [p.rg, p.rgOrgao].filter(Boolean).join(' – ')], ['SIN (Canadá)', p.sin],
+        ['Passaporte' + (p.passaportePais ? ' ' + p.passaportePais : ''), p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
+        ['Passaporte' + (p.passaporte2Pais ? ' ' + p.passaporte2Pais : ' 2'), p.passaporte2], ['Validade passaporte' + (p.passaporte2Pais ? ' ' + p.passaporte2Pais : ' 2'), fmtDate(p.passaporte2Validade)],
         ['Visto EUA', p.vistoEua], ['Tipo do visto', p.vistoEuaTipo], ['Validade visto EUA', fmtDate(p.vistoEuaValidade)],
-        ['Endereço', fullAddress(p)], ['CEP', p.cep],
+        ['Endereço', fullAddress(p)], [(p.pais || 'BR') === 'BR' ? 'CEP' : 'Postal code', p.cep],
         ['Obs.', p.obs], ...(p.extras || []).map(e => [esc(e.rotulo), e.valor])
       ].filter(r => r[1]);
       const idx = ppl.indexOf(p), n = ppl.length;
@@ -999,6 +1087,8 @@ const Questionario = (() => {
     closeOcr();
     editingId = id || null; const p = state.people.find(x => x.id === id) || { nacionalidade: 'Brasileira' };
     FIELDS.forEach(f => $('#f_' + f).value = p[f] || '');
+    $('#f_pais').value = p.pais || 'BR'; aplicarPais(); $('#sinErr').textContent = '';
+    $('#pass2Wrap').open = !!(p.passaporte2 || p.passaporte2Pais);
     renderExtras(p.extras || []);
     $('#formTitle').textContent = id ? 'Editar pessoa' : 'Nova pessoa';
     $('#btnDelete').hidden = !id; $('#cpfErr').textContent = '';
@@ -1018,11 +1108,35 @@ const Questionario = (() => {
   }
   $('#btnAddExtra').onclick = () => { renderExtras([...readExtras(), { rotulo: '', valor: '' }]); const r = document.querySelectorAll('#extras .x-r'); r[r.length - 1].focus(); };
   $('#extras').onclick = e => { if (e.target.dataset.xdel !== undefined) e.target.closest('.extra').remove(); };
+  // rótulos e formatos do endereço/telefone conforme o país de residência
+  function aplicarPais() {
+    const pais = $('#f_pais').value || 'BR', br = pais === 'BR', na = pais === 'CA' || pais === 'US';
+    $('#lblCep').textContent = br ? 'CEP' : pais === 'CA' ? 'Postal code' : pais === 'US' ? 'ZIP code' : 'Código postal';
+    $('#f_cep').placeholder = br ? '00000-000' : pais === 'CA' ? 'A1A 1A1' : pais === 'US' ? '00000' : '';
+    $('#f_cep').inputMode = br || pais === 'US' ? 'numeric' : 'text';
+    $('#btnCep').hidden = !br; $('#cepMsg').textContent = br ? 'Ao digitar o CEP, o endereço é preenchido (consulta só o CEP no ViaCEP).' : '';
+    $('#lblLogr').textContent = br ? 'Logradouro (rua, quadra, avenida)' : na ? 'Rua (street)' : 'Rua';
+    $('#f_logradouro').placeholder = br ? 'SQS 308 Bloco A / Rua das Flores' : na ? 'Main Street' : '';
+    $('#lblNum').textContent = br ? 'Número' : na ? 'Número (civic number)' : 'Número';
+    $('#lblCompl').textContent = br ? 'Complemento' : na ? 'Apto/Unit' : 'Complemento';
+    $('#f_complemento').placeholder = br ? 'Apto 101' : na ? 'Unit 1203' : '';
+    $('#bairroWrap').hidden = na && !$('#f_bairro').value;
+    $('#lblUf').textContent = br ? 'UF' : pais === 'CA' ? 'Província' : pais === 'US' ? 'Estado (sigla)' : 'Estado/região';
+    $('#f_uf').maxLength = br || na ? 2 : 40; $('#f_uf').placeholder = br ? 'DF' : pais === 'CA' ? 'ON' : pais === 'US' ? 'NY' : '';
+    $('#ufList').innerHTML = br ? UF_BR.map(u => `<option value="${u}">`).join('') : pais === 'CA' ? PROV_CA.map(([c, n]) => `<option value="${c}">${n}</option>`).join('') : '';
+    $('#f_celular').placeholder = br ? '(61) 99999-9999' : na ? '(416) 555-1234' : '+351 912 345 678';
+    $('#caDocs').hidden = pais !== 'CA' && !$('#f_sin').value;
+  }
+  $('#f_pais').onchange = () => { aplicarPais(); const pais = $('#f_pais').value;
+    if ($('#f_celular').value) $('#f_celular').value = fmtPhone($('#f_celular').value, pais);
+    if ($('#f_cep').value) $('#f_cep').value = fmtPostal($('#f_cep').value, pais); };
+  $('#f_sin').oninput = e => { e.target.value = fmtSIN(e.target.value); $('#sinErr').textContent = ''; };
+  $('#f_sin').onblur = e => { if (e.target.value && !validSIN(e.target.value)) $('#sinErr').textContent = 'SIN inválido – confira os dígitos.'; };
   $('#btnAdd').onclick = () => openForm(null);
   $('#btnCancel').onclick = () => { closeOcr(); $('#formCard').hidden = true; editingId = null; };
   $('#f_cpf').oninput = e => { e.target.value = fmtCPF(e.target.value); $('#cpfErr').textContent = ''; };
   $('#f_cpf').onblur = e => { if (e.target.value && !validCPF(e.target.value)) $('#cpfErr').textContent = 'CPF inválido – confira os dígitos.'; };
-  $('#f_celular').onblur = e => { e.target.value = fmtPhone(e.target.value); };
+  $('#f_celular').onblur = e => { e.target.value = fmtPhone(e.target.value, $('#f_pais').value); };
   let lastCep = '';
   async function lookupCep(force) {
     const d = $('#f_cep').value.replace(/\D/g, ''), msg = $('#cepMsg');
@@ -1043,15 +1157,22 @@ const Questionario = (() => {
     } catch { lastCep = ''; msg.textContent = 'Não consegui consultar o CEP (sem internet?). Preencha manualmente.'; }
     finally { $('#btnCep').disabled = false; }
   }
-  $('#f_cep').oninput = e => { e.target.value = fmtCEP(e.target.value); if (e.target.value.length === 9) lookupCep(false); };
+  $('#f_cep').oninput = e => { if (($('#f_pais').value || 'BR') !== 'BR') return; e.target.value = fmtCEP(e.target.value); if (e.target.value.length === 9) lookupCep(false); };
+  $('#f_cep').onblur = e => { const pais = $('#f_pais').value || 'BR'; if (pais === 'BR') return; e.target.value = fmtPostal(e.target.value, pais);
+    $('#cepMsg').textContent = pais === 'CA' && e.target.value && !validPostalCA(e.target.value) ? 'Postal code canadense tem o formato A1A 1A1 — confira.' : ''; };
   $('#btnCep').onclick = () => lookupCep(true);
   $('#addrFrom').onchange = e => {
     const src = state.people.find(x => x.id === e.target.value); if (!src) return;
-    ADDR.forEach(f => $('#f_' + f).value = src[f] || ''); e.target.value = ''; toast('Endereço copiado — clique em Salvar');
+    ADDR.forEach(f => $('#f_' + f).value = src[f] || ''); if (!$('#f_pais').value) $('#f_pais').value = 'BR'; aplicarPais(); e.target.value = ''; toast('Endereço copiado — clique em Salvar');
   };
   $('#btnSave').onclick = async () => {
     const p = {}; FIELDS.forEach(f => p[f] = $('#f_' + f).value.trim());
-    p.passaporte = p.passaporte.toUpperCase(); p.vistoEua = p.vistoEua.toUpperCase(); p.uf = p.uf.toUpperCase(); p.cep = fmtCEP(p.cep); p.celular = fmtPhone(p.celular);
+    p.pais = p.pais || 'BR';
+    p.passaporte = p.passaporte.toUpperCase(); p.passaporte2 = p.passaporte2.toUpperCase(); p.vistoEua = p.vistoEua.toUpperCase();
+    p.passaportePais = p.passaportePais.toUpperCase(); p.passaporte2Pais = p.passaporte2Pais.toUpperCase();
+    if (p.uf.length <= 2) p.uf = p.uf.toUpperCase(); p.cep = fmtPostal(p.cep, p.pais); p.celular = fmtPhone(p.celular, p.pais);
+    if (p.sin) p.sin = fmtSIN(p.sin);
+    if (p.sin && !validSIN(p.sin) && !confirm('O SIN parece inválido. Salvar mesmo assim?')) return;
     p.extras = readExtras();
     const dup = p.extras.map(e => Questionario.norm(e.rotulo)).find((n, i, a) => a.indexOf(n) !== i);
     if (dup) { alert('Há dois campos extras com o mesmo nome. Deixe só um.'); return; }
@@ -1200,7 +1321,8 @@ const Questionario = (() => {
   };
 
   const LABELS = { nome: 'Nome', cpf: 'CPF', nascimento: 'Nascimento', sexo: 'Sexo', nacionalidade: 'Nacionalidade', rg: 'RG / CIN', rgOrgao: 'Órgão/UF',
-    passaporte: 'Passaporte', passaporteValidade: 'Validade passaporte', vistoEua: 'Visto EUA', vistoEuaTipo: 'Tipo do visto', vistoEuaValidade: 'Validade visto EUA' };
+    passaporte: 'Passaporte', passaporteValidade: 'Validade passaporte', passaportePais: 'País do passaporte',
+    passaporte2: '2º passaporte', passaporte2Validade: 'Validade 2º passaporte', passaporte2Pais: 'País do 2º passaporte', vistoEua: 'Visto EUA', vistoEuaTipo: 'Tipo do visto', vistoEuaValidade: 'Validade visto EUA' };
   function merge(m, t, raw) {
     const r = {};
     ['nome', 'cpf', 'nascimento', 'sexo', 'rg', 'rgOrgao'].forEach(k => { if (t[k]) r[k] = t[k]; });
@@ -1230,6 +1352,8 @@ const Questionario = (() => {
           kind = 'Passaporte — dados conferidos pelos dígitos de controle' + (doc ? '' : guess ? ' — confira o número do passaporte com a foto' : ' — número não conferido, digite-o');
           if (doc) r.passaporte = doc; else if (guess) { r.passaporte = guess; r._docUnverified = true; }
           if (m.exp) r.passaporteValidade = m.exp;
+          if (m.issuer && /^[A-Z]{1,3}$/.test(m.issuer)) r.passaportePais = m.issuer;
+          if (m.issuer && m.issuer !== 'BRA') kind = kind.replace('Passaporte', 'Passaporte ' + ({ CAN: 'canadense', USA: 'americano', PRT: 'português', ITA: 'italiano' }[m.issuer] || m.issuer));
         }
       } else {
         kind = 'Carteira de identidade (CIN/RG novo) — datas conferidas pelos dígitos de controle';
@@ -1247,6 +1371,15 @@ const Questionario = (() => {
     const { r, kind } = merge(mrz, txt, raw);
     const box = $('#ocrResult');
     const cur = k => $('#f_' + k).value.trim();
+    // passaporte de outro país (dupla cidadania): se já há um passaporte de outro país no cadastro, vai para o 2º passaporte
+    if (r.passaporte && r.passaportePais && !r._passFromVisa) {
+      const pais1 = cur('passaportePais').toUpperCase() || (cur('passaporte') ? 'BRA' : '');
+      const doMesmo = !cur('passaporte') || cur('passaporte').toUpperCase() === r.passaporte || pais1 === r.passaportePais;
+      if (!doMesmo) {
+        r.passaporte2 = r.passaporte; r.passaporte2Pais = r.passaportePais; if (r.passaporteValidade) r.passaporte2Validade = r.passaporteValidade;
+        delete r.passaporte; delete r.passaportePais; delete r.passaporteValidade; if (r._docUnverified) r._doc2Unverified = true; delete r._docUnverified;
+      }
+    }
     const show = (k, v) => DATE_FIELDS.has(k) ? fmtDate(v) : v;
     const found = Object.keys(LABELS).filter(k => r[k]);
     if (!found.length) {
@@ -1266,13 +1399,13 @@ const Questionario = (() => {
     const missing = [], updates = [], ok = [], notes = [];
     for (const k of found) {
       if (!cur(k)) { missing.push(k); continue; }
-      if (k === 'passaporte' && r._docUnverified) { notes.push(`Li o número ${esc(r[k])}, mas ele não conferiu com o dígito de controle; mantive o cadastrado (${esc(cur(k))}).`); continue; }
+      if ((k === 'passaporte' && r._docUnverified) || (k === 'passaporte2' && r._doc2Unverified)) { notes.push(`Li o número ${esc(r[k])}, mas ele não conferiu com o dígito de controle; mantive o cadastrado (${esc(cur(k))}).`); continue; }
       if (same(k)) { ok.push(k); continue; }
       if (k === 'passaporte' && r._passFromVisa) { notes.push(`O visto foi emitido com o passaporte ${esc(r[k])}; mantive o passaporte cadastrado (${esc(cur(k))}).`); continue; }
       if (DATE_FIELDS.has(k) && k !== 'nascimento' && r[k] <= cur(k)) { notes.push(`${LABELS[k]} na foto (${fmtDate(r[k])}) é anterior à cadastrada — parece um documento mais antigo.`); continue; }
       updates.push(k);
     }
-    const unver = k => k === 'passaporte' && r._docUnverified;
+    const unver = k => (k === 'passaporte' && r._docUnverified) || (k === 'passaporte2' && r._doc2Unverified);
     const row = (k, checked) => `<input type="checkbox" data-k="${k}" ${checked && !unver(k) ? 'checked' : ''}><span style="font-size:13px">${LABELS[k]}</span><input data-v="${k}" value="${esc(show(k, r[k]))}">
       ${unver(k) ? `<span class="cur">não conferido pelo dígito de controle — compare com a foto, corrija se preciso e marque</span>` : checked ? '' : `<span class="cur">cadastrado: ${esc(show(k, cur(k)))} — marque para atualizar</span>`}`;
     box.innerHTML = `<p style="margin:10px 0 0;font-size:14px"><b>${esc(kind)}</b></p>
@@ -1293,6 +1426,7 @@ const Questionario = (() => {
         if (k === 'sexo') v = /^F/i.test(v) ? 'Feminino' : /^M/i.test(v) ? 'Masculino' : '';
         if (!v) return; $('#f_' + k).value = v; n++;
       });
+      if ($('#f_passaporte2').value) $('#pass2Wrap').open = true;
       if ($('#f_cpf').value && !validCPF($('#f_cpf').value)) $('#cpfErr').textContent = 'CPF inválido – confira os dígitos.';
       closeOcr(); toast(`${n} campo(s) preenchido(s) — confira e clique em Salvar`);
     };
