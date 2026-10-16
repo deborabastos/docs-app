@@ -263,14 +263,25 @@ const DocParse = (() => {
   function digits(s) { let out = ['']; for (const c of s) { const o = dc(c); if (!o) return []; const n = []; for (const p of out) for (const d of o) n.push(p + d); out = n; if (out.length > 512) return []; } return out; }
   const okDate = d => { const m = +d.slice(2, 4), dd = +d.slice(4, 6); return m >= 1 && m <= 12 && dd >= 1 && dd <= 31; };
   function solveDate(f, c) { for (const ch of dc(c)) for (const d of digits(f)) if (okDate(d) && check(d) === +ch) return d; return null; }
-  function solveDoc(raw, c) {
-    const cks = dc(c); if (!cks || !raw) return null;
-    const tries = new Set([raw, raw.replace(/<+$/, ''), raw.replace(/[<KC]+$/, '')]);
-    const br = raw.match(/([A-Z0-9]{2})([A-Z0-9]{6})/); // padrão brasileiro: 2 letras + 6 números
-    if (br) for (const d of digits(br[2])) tries.add(alp(br[1]) + d);
-    for (const t of tries) for (const ch of cks) if (t && check(t) === +ch) return t.replace(/<+$/, '');
+  // seg = o que vem antes do dígito de controle do documento. O número ocupa as 9 posições logo antes dele
+  // (a sujeira de leitura antes do número é ignorada). Passaporte brasileiro: 2 letras + 6 números + '<'.
+  const brCands = b => /^[A-Z0-9]{2}[A-Z0-9]{6}$/.test(b) && /^[A-Z]{2}$/.test(alp(b.slice(0, 2))) ? digits(b.slice(2)).map(d => alp(b.slice(0, 2)) + d) : [];
+  function docTries(seg) {
+    const w = seg.slice(-9), tries = [];
+    // 9ª posição é preenchimento ('<', às vezes lido como K, C, L, E…): tenta primeiro o número de 8; depois o caso em que o '<' sumiu
+    if (w.length === 9 && !/\d/.test(w[8])) tries.push(...brCands(w.slice(0, 8)));
+    tries.push(w.replace(/<+$/, ''));
+    tries.push(...brCands(seg.slice(-8)));
+    if (w.length === 9) tries.push(...brCands(w.slice(0, 8)));
+    return [...new Set(tries.filter(t => t.length >= 6))];
+  }
+  function solveDoc(seg, c) {
+    const cks = dc(c); if (!cks || !seg) return null;
+    for (const t of docTries(seg)) for (const ch of cks) if (check(t) === +ch) return t;
     return null;
   }
+  // melhor palpite quando o dígito de controle não confere (fica desmarcado, para conferir com a foto)
+  const guessDoc = seg => { const w = (seg || '').slice(-9); return brCands(w.slice(0, 8))[0] || brCands(seg.slice(-8))[0] || ''; };
   // confere um número lido em outro lugar (ex.: texto impresso) contra o dígito de controle da MRZ
   const docMatches = (doc, c) => !!doc && [...dc(c)].some(ch => check(doc) === +ch);
   const clean = l => l.toUpperCase().replace(/[«‹(\[{]/g, '<').replace(/\s+/g, '').replace(/[^A-Z0-9<]/g, '');
@@ -300,7 +311,8 @@ const DocParse = (() => {
         if (p >= 6) { // passaporte ou visto: … documento(9) dv país(3) | datas
           const natCode = alp(s.slice(p - 3, p)).replace(/<+$/, '');
           r.nat = natName(s.slice(p - 3, p)); r.docChk = s[p - 4];
-          r.doc = solveDoc(s.slice(Math.max(0, p - 14), p - 4), s[p - 4]);
+          const seg = s.slice(Math.max(0, p - 16), p - 4);
+          r.doc = solveDoc(seg, s[p - 4]); if (!r.doc) r.docGuess = guessDoc(seg);
           let type = '', issuer = '', nameField = '';
           for (const l of [L[i - 1], L[i - 2]]) {
             const h = l && l.match(/^.{0,6}?([PVYW])([A-Z<0-9])([A-Z0-9]{3})/);
@@ -385,7 +397,7 @@ const DocParse = (() => {
     }
     return out;
   }
-  return { parseMRZ, parseText, validCPF, fmtCPF, check, docMatches, visaNumbers };
+  return { parseMRZ, parseText, validCPF, fmtCPF, check, docMatches, visaNumbers, solveDoc };
 })();
 </script>
 
@@ -1155,8 +1167,10 @@ const Questionario = (() => {
           kind = 'Visto' + (m.issuer === 'USA' || t.isUsVisa ? ' americano' : '') + ' — datas conferidas pelos dígitos de controle' +
             (vn ? '. Confira o número do visto (vermelho), que não tem dígito de controle' : '. Não consegui ler o número em vermelho: digite-o');
         } else {
-          kind = 'Passaporte — dados conferidos pelos dígitos de controle' + (doc ? '' : ' — número não conferido, digite-o');
-          if (doc) r.passaporte = doc; if (m.exp) r.passaporteValidade = m.exp;
+          const guess = !doc && ((t.passaportes || [])[0] || m.docGuess || '');
+          kind = 'Passaporte — dados conferidos pelos dígitos de controle' + (doc ? '' : guess ? ' — confira o número do passaporte com a foto' : ' — número não conferido, digite-o');
+          if (doc) r.passaporte = doc; else if (guess) { r.passaporte = guess; r._docUnverified = true; }
+          if (m.exp) r.passaporteValidade = m.exp;
         }
       } else {
         kind = 'Carteira de identidade (CIN/RG novo) — datas conferidas pelos dígitos de controle';
@@ -1182,8 +1196,10 @@ const Questionario = (() => {
       return;
     }
     const plainAll = norm(raw + ' ' + (r.nome || ''));
+    const nat = v => norm(v).replace(/OA$|A$|O$/, '');   // Brasileira = Brasileiro = Brasileiro(a)
     const same = k => {
       if (norm(show(k, cur(k))) === norm(show(k, r[k]))) return true;
+      if (k === 'nacionalidade') return nat(cur(k)) === nat(r[k]);
       // nome: se todas as palavras do nome cadastrado aparecem no documento, é o mesmo nome (diferença é só ruído de leitura)
       if (k === 'nome') return norm(cur(k)) && cur(k).split(/\s+/).map(norm).filter(w => w.length > 1).every(w => plainAll.includes(w));
       return false;
@@ -1191,13 +1207,15 @@ const Questionario = (() => {
     const missing = [], updates = [], ok = [], notes = [];
     for (const k of found) {
       if (!cur(k)) { missing.push(k); continue; }
+      if (k === 'passaporte' && r._docUnverified) { notes.push(`Li o número ${esc(r[k])}, mas ele não conferiu com o dígito de controle; mantive o cadastrado (${esc(cur(k))}).`); continue; }
       if (same(k)) { ok.push(k); continue; }
       if (k === 'passaporte' && r._passFromVisa) { notes.push(`O visto foi emitido com o passaporte ${esc(r[k])}; mantive o passaporte cadastrado (${esc(cur(k))}).`); continue; }
       if (DATE_FIELDS.has(k) && k !== 'nascimento' && r[k] <= cur(k)) { notes.push(`${LABELS[k]} na foto (${fmtDate(r[k])}) é anterior à cadastrada — parece um documento mais antigo.`); continue; }
       updates.push(k);
     }
-    const row = (k, checked) => `<input type="checkbox" data-k="${k}" ${checked ? 'checked' : ''}><span style="font-size:13px">${LABELS[k]}</span><input data-v="${k}" value="${esc(show(k, r[k]))}">
-      ${checked ? '' : `<span class="cur">cadastrado: ${esc(show(k, cur(k)))} — marque para atualizar</span>`}`;
+    const unver = k => k === 'passaporte' && r._docUnverified;
+    const row = (k, checked) => `<input type="checkbox" data-k="${k}" ${checked && !unver(k) ? 'checked' : ''}><span style="font-size:13px">${LABELS[k]}</span><input data-v="${k}" value="${esc(show(k, r[k]))}">
+      ${unver(k) ? `<span class="cur">não conferido pelo dígito de controle — compare com a foto, corrija se preciso e marque</span>` : checked ? '' : `<span class="cur">cadastrado: ${esc(show(k, cur(k)))} — marque para atualizar</span>`}`;
     box.innerHTML = `<p style="margin:10px 0 0;font-size:14px"><b>${esc(kind)}</b></p>
       ${missing.length ? `<h3>Dados que faltavam no cadastro</h3><div class="res">${missing.map(k => row(k, true)).join('')}</div>`
                        : `<p class="hint">Nenhum dado faltante encontrado nesta foto.</p>`}
