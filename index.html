@@ -301,6 +301,12 @@ const DocParse = (() => {
   }
   function parseMRZ(text) {
     const L = text.split('\n').map(clean).filter(l => l.length >= 15);
+    const r = scanMRZ(L); if (r) return r;
+    // a leitura às vezes quebra uma linha <<< em duas: tenta de novo juntando linhas vizinhas curtas
+    const J = []; for (let i = 0; i < L.length; i++) { if (L[i].length < 40 && L[i + 1] && L[i + 1].length < 40) { J.push(L[i] + L[i + 1]); i++; } else J.push(L[i]); }
+    return J.length < L.length ? scanMRZ(J) : null;
+  }
+  function scanMRZ(L) {
     for (let i = 0; i < L.length; i++) {
       const s = L[i];
       for (let p = 0; p + 15 <= s.length; p++) {
@@ -308,11 +314,13 @@ const DocParse = (() => {
         const b = solveDate(s.slice(p, p + 6), s[p + 6]); if (!b) continue;
         const e = solveDate(s.slice(p + 8, p + 14), s[p + 14]); if (!e) continue;
         const r = { birth: isoOf(b, 'birth'), exp: isoOf(e, 'exp'), sex: sexOf(s[p + 7]) };
-        if (p >= 6) { // passaporte ou visto: … documento(9) dv país(3) | datas
-          const natCode = alp(s.slice(p - 3, p)).replace(/<+$/, '');
-          r.nat = natName(s.slice(p - 3, p)); r.docChk = s[p - 4];
-          const seg = s.slice(Math.max(0, p - 16), p - 4);
-          r.doc = solveDoc(seg, s[p - 4]); if (!r.doc) r.docGuess = guessDoc(seg);
+        // começo da 2ª linha cortado na leitura: se a linha de cima é de passaporte/visto (P<, V<), continua sendo passaporte
+        const l1Doc = /^.{0,6}?[PV][A-Z<][A-Z<]{3}[A-Z<]*<</.test(L[i - 1] || '') || /^.{0,6}?[PV][A-Z<][A-Z<]{3}/.test(L[i - 2] || '');
+        if (p >= 6 || (p >= 1 && l1Doc)) { // passaporte ou visto: … documento(9) dv país(3) | datas
+          const natCode = alp(s.slice(Math.max(0, p - 3), p)).replace(/<+$/, '');
+          r.nat = p >= 3 ? natName(s.slice(p - 3, p)) : ''; r.docChk = p >= 4 ? s[p - 4] : '';
+          const seg = p >= 4 ? s.slice(Math.max(0, p - 16), p - 4) : '';
+          r.doc = seg ? solveDoc(seg, s[p - 4]) : null; if (!r.doc) r.docGuess = seg.length >= 8 ? guessDoc(seg) : '';
           let type = '', issuer = '', nameField = '';
           for (const l of [L[i - 1], L[i - 2]]) {
             const h = l && l.match(/^.{0,6}?([PVYW])([A-Z<0-9])([A-Z0-9]{3})/);
@@ -382,7 +390,19 @@ const DocParse = (() => {
     }
     const org = all.match(/\b(SSP|SDS|SESP|SEJUSP|PCDF|PC|IIRGD|IFP|DETRAN|DIC|DGPC|SESDEC|SSPDS|SPTC)\s*[\/\-]?\s*([A-Z]{2})\b/);
     if (org) r.rgOrgao = `${org[1]}/${org[2]}`;
-    const pp = [...all.matchAll(/(?<![A-Z0-9])([A-Z]{2}\d{6})(?![0-9])/g)].map(m => m[1]); if (pp.length) { r.passaporte = pp[0]; r.passaportes = pp; }
+    // número impresso do passaporte (2 letras + 6 números). Exato primeiro; depois tolerante a espaço e a letra/número trocados
+    // (Z↔2, O↔0, I↔1, S↔5…), só nas linhas do topo da página ou perto de "Passaporte/Passport" — quem decide é o dígito de controle.
+    const pp = [...all.matchAll(/(?<![A-Z0-9])([A-Z]{2}\d{6})(?![0-9])/g)].map(m => m[1]);
+    const fuzzy = [];
+    up.forEach((l, i) => {
+      if (!(i < 8 || /PASSA?PORT|PASSPORT|N[º°O]?\s*\.?\s*(DO\s*)?PASS/.test((up[i - 1] || '') + ' ' + l))) return;
+      for (const m of l.matchAll(/(?<![A-Z0-9])([A-Z0-9]{2})\s?([A-Z0-9]{3})\s?([A-Z0-9]{3})(?![A-Z0-9])/g)) {
+        const tok = m[1] + m[2] + m[3]; if (!/\d/.test(tok.slice(2))) continue;
+        fuzzy.push(...brCands(tok).slice(0, 8));
+      }
+    });
+    const allPP = [...new Set([...pp, ...fuzzy])];
+    if (allPP.length) { r.passaporte = pp[0] || ''; r.passaportes = allPP; }
     r.isUsVisa = /VISA/.test(all) && /(CONTROL\s*NUMBER|VISA\s*TYPE|ENTRIES|ANNOTATION|ISSUING\s*POST|UNITED\s*STATES)/.test(all);
     const vt = all.match(/\b(B-?1\s*\/\s*B-?2|F-?1|J-?1|H-?1B|L-?1|C-?1\s*\/\s*D|M-?1|O-?1|E-?2)\b/); if (vt) r.vistoTipo = vt[1].replace(/\s+/g, '').replace(/-/g, '');
     return r;
@@ -1157,7 +1177,7 @@ const Questionario = (() => {
         let doc = m.doc;
         if (!doc) { // número ilegível nas linhas <<<: procura no texto impresso e confere pelo dígito de controle
           const cands = m.fmt === 'VISA' ? (raw.match(/\b\d{8}\b/g) || []) : (t.passaportes || []);
-          doc = cands.find(c => DocParse.docMatches(c, m.docChk)) || '';
+          doc = m.docChk ? cands.find(c => DocParse.docMatches(c, m.docChk)) || '' : '';
         }
         if (m.fmt === 'VISA') {
           // no visto americano, o número nas linhas <<< é o do passaporte; o número do visto é o impresso em vermelho
