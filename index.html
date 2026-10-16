@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Documentos da Família</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;--acc:#1f5f8b;--warn:#b45309;--err:#b91c1c;--ok:#15803d}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e21;--ink:#ececee;--muted:#9a9aa1;--line:#2e2e33;--acc:#6fb1e0;--warn:#f59e0b;--err:#f87171;--ok:#4ade80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:17px;margin:0 0 12px}
+h3{font-size:14px;margin:14px 0 8px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.sub{color:var(--muted);margin:0 0 18px;font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:200px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.full{grid-column:1/-1}
+button,.filebtn{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;display:inline-block;width:auto;margin:0;font-size:15px}
+button:hover,.filebtn:hover{border-color:var(--acc)}
+button.pri,.filebtn{background:var(--acc);border-color:var(--acc);color:#fff}
+button.danger{color:var(--err)}
+button.sm{padding:4px 10px;font-size:13px}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.spread{justify-content:space-between}
+.err{color:var(--err);font-size:13px;min-height:1em}
+.hint{color:var(--muted);font-size:12px;margin-top:4px}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid currentColor}
+.b-warn{color:var(--warn)}.b-err{color:var(--err)}.b-ok{color:var(--ok)}
+.person{border-top:1px solid var(--line);padding:10px 0}
+.person:first-child{border-top:0}
+.pname{font-weight:600;flex:1;min-width:160px}
+.details{margin:10px 0 4px 28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px 16px}
+.field{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:14px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.field span:first-child{color:var(--muted);font-size:12px}
+.field b{font-weight:500;word-break:break-all}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);padding:0}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink);margin:0}
+.ocr{border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:16px}
+.ocr.drag{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,transparent)}
+#ocrCanvas{max-width:100%;max-height:320px;border-radius:8px;display:block;margin:10px 0;border:1px solid var(--line)}
+.res{display:grid;grid-template-columns:auto 150px 1fr;gap:6px 10px;align-items:center;margin:10px 0}
+.res .cur{grid-column:2/4;font-size:11px;color:var(--warn);margin-top:-4px}
+details summary{cursor:pointer;font-size:13px;color:var(--muted)}
+details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;background:var(--bg);padding:8px;border-radius:8px}
+[hidden]{display:none!important}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<main>
+  <h1>Documentos da Família</h1>
+  <p class="sub">Funciona neste computador. Os dados ficam criptografados (AES‑256) no navegador e só abrem com a sua senha mestra. A leitura de fotos também acontece aqui: a imagem não é enviada a lugar nenhum.</p>
+
+  <!-- TELA DE BLOQUEIO -->
+  <section id="lock" class="card">
+    <h2 id="lockTitle"></h2>
+    <p id="lockMsg" class="sub"></p>
+    <div class="grid">
+      <div><label for="pw1">Senha mestra</label><input type="password" id="pw1" autocomplete="off"></div>
+      <div id="pw2wrap"><label for="pw2">Confirme a senha</label><input type="password" id="pw2" autocomplete="off"></div>
+    </div>
+    <p class="err" id="lockErr"></p>
+    <div class="row"><button class="pri" id="btnUnlock"></button></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    <label for="importFile">Restaurar de um backup (.json exportado por esta página)</label>
+    <input type="file" id="importFile" accept=".json,.txt,application/json,text/plain">
+    <details style="margin-top:10px">
+      <summary>…ou colar o texto do backup</summary>
+      <textarea id="importText" style="min-height:90px;margin-top:8px" placeholder='{"v":1,"salt":"…","iv":"…","ct":"…"}'></textarea>
+      <button id="btnImportText" style="margin-top:8px">Restaurar a partir do texto</button>
+    </details>
+  </section>
+
+  <!-- APLICATIVO -->
+  <section id="app" hidden>
+    <div class="row spread" style="margin-bottom:16px">
+      <div class="row">
+        <button class="pri" id="btnAdd">+ Adicionar pessoa</button>
+        <button id="btnExport">Exportar backup</button>
+      </div>
+      <button id="btnLock">🔒 Bloquear</button>
+    </div>
+
+    <!-- BACKUP (fallback) -->
+    <div class="card" id="backupCard" hidden>
+      <h2>Backup criptografado</h2>
+      <p class="hint" id="backupMsg"></p>
+      <textarea id="backupText" readonly style="min-height:110px"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="pri" id="btnCopyBackup">Copiar texto do backup</button>
+        <button id="btnCloseBackup">Fechar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Pessoas</h2>
+      <div id="list"></div>
+      <p class="hint" id="emptyHint">Nenhuma pessoa cadastrada ainda.</p>
+    </div>
+
+    <div class="card">
+      <h2>Questionário de passageiros</h2>
+      <div class="row" style="margin-bottom:10px;gap:18px">
+        <label class="check"><input type="checkbox" id="intl"> Voo internacional (incluir passaporte)</label>
+        <label class="check"><input type="checkbox" id="incVisa"> Incluir visto americano</label>
+      </div>
+      <p class="hint" style="margin-bottom:10px">Marque as pessoas na lista acima e clique em Gerar.</p>
+      <div class="row" style="margin-bottom:10px">
+        <button class="pri" id="btnGen">Gerar</button>
+        <button id="btnCopyOut">Copiar</button>
+      </div>
+      <p class="err" id="genWarn"></p>
+      <textarea id="out" readonly></textarea>
+    </div>
+
+    <!-- FORMULÁRIO -->
+    <div class="card" id="formCard" hidden>
+      <h2 id="formTitle">Nova pessoa</h2>
+
+      <div class="ocr" id="ocrZone">
+        <div class="row">
+          <label class="filebtn" for="ocrFile">📷 Preencher a partir de foto</label>
+          <input type="file" id="ocrFile" accept="image/*" hidden>
+          <span class="hint" style="margin:0;flex:1;min-width:200px">Passaporte, visto americano, CIN, RG ou CNH. Arraste, cole (Ctrl+V) ou escolha a foto. Ela é lida neste computador, não é enviada nem guardada.</span>
+        </div>
+        <div id="ocrBox" hidden>
+          <canvas id="ocrCanvas"></canvas>
+          <div class="row">
+            <button id="ocrRotate">↻ Girar</button>
+            <button class="pri" id="ocrRun">Extrair dados</button>
+            <button id="ocrClose">Descartar foto</button>
+          </div>
+          <p class="hint" id="ocrProgress"></p>
+          <div id="ocrResult"></div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="full"><label>Nome completo (como no documento)</label><input id="f_nome"></div>
+        <div><label>CPF</label><input id="f_cpf" inputmode="numeric" placeholder="000.000.000-00"><p class="err" id="cpfErr"></p></div>
+        <div><label>Data de nascimento</label><input id="f_nascimento" type="date"></div>
+        <div><label>Nacionalidade</label><input id="f_nacionalidade" value="Brasileira"></div>
+        <div><label>Sexo</label><select id="f_sexo"><option value="">—</option><option>Feminino</option><option>Masculino</option></select></div>
+        <div><label>E-mail</label><input id="f_email" type="email"></div>
+        <div><label>Celular</label><input id="f_celular" inputmode="tel" placeholder="(61) 99999-9999"></div>
+      </div>
+      <h3>Identidade</h3>
+      <div class="grid">
+        <div><label>RG / CIN – número</label><input id="f_rg"></div>
+        <div><label>RG – órgão emissor/UF</label><input id="f_rgOrgao" placeholder="SSP/DF"></div>
+      </div>
+      <h3>Passaporte</h3>
+      <div class="grid">
+        <div><label>Número</label><input id="f_passaporte" style="text-transform:uppercase"></div>
+        <div><label>Validade</label><input id="f_passaporteValidade" type="date"></div>
+      </div>
+      <h3>Visto americano</h3>
+      <div class="grid">
+        <div><label>Número do visto</label><input id="f_vistoEua" style="text-transform:uppercase" placeholder="nº em vermelho no visto"></div>
+        <div><label>Tipo/classe</label><input id="f_vistoEuaTipo" placeholder="B1/B2"></div>
+        <div><label>Validade</label><input id="f_vistoEuaValidade" type="date"></div>
+      </div>
+      <h3>Endereço</h3>
+      <div class="row" style="margin-bottom:10px">
+        <select id="addrFrom" style="width:auto;flex:1;min-width:200px"><option value="">Copiar endereço de outra pessoa…</option></select>
+      </div>
+      <div class="grid">
+        <div><label>CEP</label>
+          <div class="row" style="flex-wrap:nowrap"><input id="f_cep" inputmode="numeric" placeholder="00000-000"><button id="btnCep" title="Buscar endereço pelo CEP">Buscar</button></div>
+          <p class="hint" id="cepMsg">Ao digitar o CEP, o endereço é preenchido (consulta só o CEP no ViaCEP).</p>
+        </div>
+        <div class="full"><label>Logradouro (rua, quadra, avenida)</label><input id="f_logradouro" placeholder="SQS 308 Bloco A / Rua das Flores"></div>
+        <div><label>Número</label><input id="f_numero"></div>
+        <div><label>Complemento</label><input id="f_complemento" placeholder="Apto 101"></div>
+        <div><label>Bairro</label><input id="f_bairro"></div>
+        <div><label>Cidade</label><input id="f_cidade"></div>
+        <div><label>UF</label><input id="f_uf" maxlength="2" style="text-transform:uppercase" placeholder="DF"></div>
+      </div>
+      <h3>Outros</h3>
+      <div class="grid">
+        <div class="full"><label>Observações</label><input id="f_obs" placeholder="ex.: nº de fidelidade, título de eleitor..."></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="pri" id="btnSave">Salvar</button>
+        <button id="btnCancel">Cancelar</button>
+        <button class="danger" id="btnDelete" hidden>Excluir</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Leitura de documentos (sem acesso à página; testável à parte) ---------- */
+const DocParse = (() => {
+  function fmtCPF(v) { const d = String(v).replace(/\D/g, '').slice(0, 11); return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2'); }
+  function validCPF(v) {
+    const d = String(v).replace(/\D/g, ''); if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+    const calc = n => { let s = 0; for (let i = 0; i < n; i++) s += +d[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+    return calc(9) === +d[9] && calc(10) === +d[10];
+  }
+  const LOWER = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E', 'DI', 'DU', 'DEL', 'VAN', 'VON']);
+  const titleCase = s => s.toLowerCase().split(' ').filter(Boolean)
+    .map((w, i) => i > 0 && LOWER.has(w.toUpperCase()) ? w : w[0].toUpperCase() + w.slice(1)).join(' ');
+
+  // --- MRZ (zona de leitura mecânica, padrão ICAO 9303) ---
+  // Âncora: o bloco "nascimento(6) dv sexo validade(6) dv" existe em passaporte, visto e CIN.
+  // Letras confundidas com números (S/5/8, O/0, I/1…) são resolvidas testando as leituras possíveis contra os dígitos de controle.
+  const val = c => c === '<' ? 0 : /\d/.test(c) ? +c : c.charCodeAt(0) - 55;
+  const check = s => { const w = [7, 3, 1]; let t = 0; for (let i = 0; i < s.length; i++) t += val(s[i]) * w[i % 3]; return t % 10; };
+  const DCAND = { O: '0', Q: '0', D: '0', U: '0', C: '0', I: '1', L: '1', J: '1', T: '71', Z: '2', A: '4', S: '58', B: '8', G: '6', E: '8', H: '4', Y: '4', P: '9', R: '8' };
+  const ALPHA = { '0': 'O', '1': 'I', '2': 'Z', '4': 'A', '5': 'S', '8': 'B', '6': 'G', '7': 'T' };
+  const dc = c => c && /\d/.test(c) ? c : (DCAND[c] || '');
+  const alp = s => s.replace(/\d/g, c => ALPHA[c] || c);
+  function digits(s) { let out = ['']; for (const c of s) { const o = dc(c); if (!o) return []; const n = []; for (const p of out) for (const d of o) n.push(p + d); out = n; if (out.length > 512) return []; } return out; }
+  const okDate = d => { const m = +d.slice(2, 4), dd = +d.slice(4, 6); return m >= 1 && m <= 12 && dd >= 1 && dd <= 31; };
+  function solveDate(f, c) { for (const ch of dc(c)) for (const d of digits(f)) if (okDate(d) && check(d) === +ch) return d; return null; }
+  function solveDoc(raw, c) {
+    const cks = dc(c); if (!cks || !raw) return null;
+    const tries = new Set([raw, raw.replace(/<+$/, ''), raw.replace(/[<KC]+$/, '')]);
+    const br = raw.match(/([A-Z0-9]{2})([A-Z0-9]{6})/); // padrão brasileiro: 2 letras + 6 números
+    if (br) for (const d of digits(br[2])) tries.add(alp(br[1]) + d);
+    for (const t of tries) for (const ch of cks) if (t && check(t) === +ch) return t.replace(/<+$/, '');
+    return null;
+  }
+  // confere um número lido em outro lugar (ex.: texto impresso) contra o dígito de controle da MRZ
+  const docMatches = (doc, c) => !!doc && [...dc(c)].some(ch => check(doc) === +ch);
+  const clean = l => l.toUpperCase().replace(/[«‹(\[{]/g, '<').replace(/\s+/g, '').replace(/[^A-Z0-9<]/g, '');
+  const NAT = { BRA: 'Brasileira', PRT: 'Portuguesa', USA: 'Americana', ITA: 'Italiana', ESP: 'Espanhola', ARG: 'Argentina', D: 'Alemã', DEU: 'Alemã', FRA: 'Francesa', URY: 'Uruguaia', PRY: 'Paraguaia', CHL: 'Chilena', JPN: 'Japonesa', GBR: 'Britânica', CAN: 'Canadense', MEX: 'Mexicana' };
+  const natName = c => { c = alp(c).replace(/[^A-Z<]/g, '').replace(/<+$/, ''); return NAT[c] || (c.length === 3 ? c : ''); };
+  const yy = new Date().getFullYear() % 100;
+  const isoOf = (s, kind) => { const y = +s.slice(0, 2); const full = kind === 'birth' ? (y > yy ? 1900 + y : 2000 + y) : 2000 + y; return `${full}-${s.slice(2, 4)}-${s.slice(4, 6)}`; };
+  const sexOf = c => c === 'F' ? 'Feminino' : c === 'M' ? 'Masculino' : '';
+  function mrzName(field) {
+    const f = field.replace(/^<+/, '');
+    const i = f.indexOf('<<'); if (i < 1) return '';
+    const junk = w => !w || /^[CLKSIE]+$/.test(w) && w.length >= 2 || w.length === 1;
+    const words = part => { const out = []; for (const w of part.split('<')) { if (junk(w)) { if (out.length) break; else continue; } out.push(w); } return out.join(' '); };
+    const sur = f.slice(0, i).split('<').filter(Boolean).join(' '), giv = words(f.slice(i + 2));
+    const n = `${giv} ${sur}`.replace(/</g, ' ').replace(/[^A-Z ]/g, '').replace(/\s+/g, ' ').trim();
+    return n.split(' ').length >= 2 ? titleCase(n) : '';
+  }
+  function parseMRZ(text) {
+    const L = text.split('\n').map(clean).filter(l => l.length >= 15);
+    for (let i = 0; i < L.length; i++) {
+      const s = L[i];
+      for (let p = 0; p + 15 <= s.length; p++) {
+        if (/\d/.test(s[p + 7])) continue;
+        const b = solveDate(s.slice(p, p + 6), s[p + 6]); if (!b) continue;
+        const e = solveDate(s.slice(p + 8, p + 14), s[p + 14]); if (!e) continue;
+        const r = { birth: isoOf(b, 'birth'), exp: isoOf(e, 'exp'), sex: sexOf(s[p + 7]) };
+        if (p >= 6) { // passaporte ou visto: … documento(9) dv país(3) | datas
+          const natCode = alp(s.slice(p - 3, p)).replace(/<+$/, '');
+          r.nat = natName(s.slice(p - 3, p)); r.docChk = s[p - 4];
+          r.doc = solveDoc(s.slice(Math.max(0, p - 14), p - 4), s[p - 4]);
+          let type = '', issuer = '', nameField = '';
+          for (const l of [L[i - 1], L[i - 2]]) {
+            const h = l && l.match(/^.{0,6}?([PVYW])([A-Z<0-9])([A-Z0-9]{3})/);
+            if (h) { type = h[1] === 'P' ? 'P' : 'V'; issuer = alp(h[3]); nameField = l.slice(h.index + h[0].length); break; }
+          }
+          if (!type) for (const l of [L[i - 1], L[i - 2]]) {   // "V" ilegível: acha o país emissor no começo da linha
+            const u = l ? l.slice(0, 10).indexOf('USA') : -1;
+            if (u >= 0) { issuer = 'USA'; nameField = l.slice(u + 3); break; }
+          }
+          r.issuer = issuer; r.l1Type = type;
+          r.fmt = type === 'V' || (issuer === 'USA' && natCode && natCode !== 'USA') ? 'VISA' : 'TD3';
+          r.name = nameField ? mrzName(nameField) : '';
+        } else {   // carteira de identidade TD1: datas no começo da 2ª linha
+          r.fmt = 'TD1'; r.nat = natName(s.slice(p + 15, p + 18));
+          const l1 = L[i - 1] || ''; r.doc = l1.length >= 14 ? solveDoc(l1.slice(5, 14), l1[14]) || l1.slice(5, 14).replace(/<+$/, '') : '';
+          r.name = mrzName(L[i + 1] || '');
+        }
+        return r;
+      }
+    }
+    return null;
+  }
+
+  // --- Texto livre da frente dos documentos ---
+  const cleanName = s => s.replace(/[^A-ZÀ-ÖØ-Ý' ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const isName = s => { const c = cleanName(s); return c.length >= 6 && c.split(' ').length >= 2 && !/\d/.test(s) &&
+    !/(REP[UÚ]BLICA|BRASIL|IDENTIDADE|CARTEIRA|NACIONAL|REGISTRO|NOME|SOBRENOME|FEDERATIVA|MINIST|HABILITA|DOCUMENTO|ASSINATURA)/.test(c); };
+  function parseText(text) {
+    const r = {}; const up = text.split('\n').map(l => l.trim().toUpperCase()).filter(Boolean); const all = up.join('\n');
+    const cpfs = [...all.matchAll(/(?<!\d)(\d{3})[.\s,]?(\d{3})[.\s,]?(\d{3})[\s.\-–]?(\d{2})(?!\d)/g)].map(m => m.slice(1).join('')).filter(validCPF);
+    if (cpfs.length) r.cpf = fmtCPF(cpfs[0]);
+    const nowY = new Date().getFullYear(), dates = [];
+    up.forEach((l, i) => { for (const m of l.matchAll(/(?<!\d)(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})(?!\d)/g)) {
+      const [, d, mo, y] = m; if (+d < 1 || +d > 31 || +mo < 1 || +mo > 12) continue;
+      dates.push({ iso: `${y}-${mo}-${d}`, y: +y, ctx: (up[i - 1] || '') + ' ' + l }); } });
+    let b = dates.find(d => /NASC|BIRTH/.test(d.ctx) && d.y > 1900 && d.y <= nowY);
+    if (!b) b = dates.filter(d => d.y > 1900 && d.y < nowY).sort((a, c) => a.iso.localeCompare(c.iso))[0];
+    if (b) r.nascimento = b.iso;
+    const v = dates.find(d => /VALID|EXPIR|VENC/.test(d.ctx) && d.y >= nowY - 1); if (v) r.validade = v.iso;
+    // passaporte: "Sobrenome/Surname" e "Nome/Given names" com o valor na linha seguinte
+    const valueAfter = re => {
+      for (let i = 0; i < up.length; i++) if (re.test(up[i])) {
+        for (const c of [up[i + 1] || '', up[i + 2] || '']) {
+          const n = cleanName(c);
+          if (n.length >= 2 && !/\d|\//.test(c) && !/(NOME|NAME|SURNAME|NACIONAL|DATA|SEXO|PASSAP|TIPO)/.test(n)) return n;
+        }
+      }
+      return '';
+    };
+    const sur = valueAfter(/SOBRE\s?NOME|SUR\s?NAME|SUMAME|SURNAME/), giv = valueAfter(/GIVEN|PRENOME|^NOMES?\s*\//);
+    if (sur && giv && !/SOBRE/.test(giv)) r.nome = titleCase(`${giv} ${sur}`);
+    for (let i = 0; i < up.length && !r.nome; i++) {
+      if (/\bNOME\b|\bNAME\b/.test(up[i]) && !/PAI|M[ÃA]E|FILIA|SOCIAL|GIVEN|SOBRE/.test(up[i])) {
+        let c = up[i].replace(/.*\b(NOME|NAME)\b[^A-ZÀ-Ý]*/, '');
+        if (!isName(c)) c = up[i + 1] || '';
+        if (isName(c)) r.nome = titleCase(cleanName(c));
+      }
+    }
+    const sx = all.match(/SEXO?[^A-Z\n]{0,6}\b([FM])\b/) || all.match(/SEX\s*\n\s*([FM])\b/); if (sx) r.sexo = sexOf(sx[1]);
+    for (let i = 0; i < up.length && !r.rg; i++) {
+      if (/REGISTRO\s*GERAL|IDENTIDADE|\bRG\b|DOC\.?\s*IDENT/.test(up[i])) {
+        for (const l of [up[i], up[i + 1] || '']) {
+          const m = [...l.matchAll(/(?<![\d.])(\d{1,2}\.?\d{3}\.?\d{3}(?:-?[\dX])?)(?![\d])/g)].map(x => x[1]).find(x => !validCPF(x));
+          if (m) { r.rg = m; break; }
+        }
+      }
+    }
+    const org = all.match(/\b(SSP|SDS|SESP|SEJUSP|PCDF|PC|IIRGD|IFP|DETRAN|DIC|DGPC|SESDEC|SSPDS|SPTC)\s*[\/\-]?\s*([A-Z]{2})\b/);
+    if (org) r.rgOrgao = `${org[1]}/${org[2]}`;
+    const pp = [...all.matchAll(/(?<![A-Z0-9])([A-Z]{2}\d{6})(?![0-9])/g)].map(m => m[1]); if (pp.length) { r.passaporte = pp[0]; r.passaportes = pp; }
+    r.isUsVisa = /VISA/.test(all) && /(CONTROL\s*NUMBER|VISA\s*TYPE|ENTRIES|ANNOTATION|ISSUING\s*POST|UNITED\s*STATES)/.test(all);
+    const vt = all.match(/\b(B-?1\s*\/\s*B-?2|F-?1|J-?1|H-?1B|L-?1|C-?1\s*\/\s*D|M-?1|O-?1|E-?2)\b/); if (vt) r.vistoTipo = vt[1].replace(/\s+/g, '').replace(/-/g, '');
+    return r;
+  }
+  // número do visto americano (impresso em vermelho): 1 letra + 7 números, ou 8 números
+  function visaNumbers(text) {
+    const out = [];
+    for (const tok of String(text).toUpperCase().split(/[^A-Z0-9]+/)) {
+      let m = tok.match(/^([A-Z])([0-9A-Z]{7})$/);
+      if (m) { const d = digits(m[2])[0]; if (d) out.push(m[1] + d); continue; }
+      m = tok.match(/^[0-9]{8}$/); if (m) out.push(tok);
+    }
+    return out;
+  }
+  return { parseMRZ, parseText, validCPF, fmtCPF, check, docMatches, visaNumbers };
+})();
+</script>
+
+<script>
+(() => {
+  const KEY = 'docsFamilia.vault.v1';
+  const IDLE_MS = 5 * 60 * 1000;
+  const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  const TESS_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
+  const FIELDS = ['nome','cpf','nascimento','nacionalidade','sexo','email','celular','rg','rgOrgao','passaporte','passaporteValidade','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
+  const ADDR = ['cep','logradouro','numero','complemento','bairro','cidade','uf'];
+  const fmtCEP = v => { const d = String(v).replace(/\D/g, '').slice(0, 8); return d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; };
+  function fullAddress(p) {
+    const l1 = [p.logradouro, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' – ' + p.complemento : '');
+    const city = [p.cidade, p.uf].filter(Boolean).join('/');
+    return [l1, p.bairro, city, p.cep ? 'CEP ' + p.cep : ''].filter(Boolean).join(' – ');
+  }
+  const DATE_FIELDS = new Set(['nascimento', 'passaporteValidade', 'vistoEuaValidade']);
+  const { validCPF, fmtCPF } = DocParse;
+  const $ = s => document.querySelector(s);
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  let state = { people: [] }, cryptoKey = null, salt = null, editingId = null, idleTimer = null;
+  const selected = new Set(), open = new Set();
+
+  // ---------- utilidades ----------
+  const b64 = buf => { const a = new Uint8Array(buf); let s = ''; for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); };
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmtDate = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+  const toIso = br => { const m = String(br).trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; };
+  const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 1800); }
+
+  function fmtPhone(v) {
+    const d = v.replace(/\D/g, ''); if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return v.trim();
+  }
+  function expStatus(iso, label, sixMonths) {
+    if (!iso) return null;
+    const exp = new Date(iso + 'T00:00:00'), now = new Date(); const lim = new Date(now); lim.setMonth(lim.getMonth() + 6);
+    if (exp < now) return { cls: 'b-err', txt: `${label} vencido` };
+    if (sixMonths && exp < lim) return { cls: 'b-warn', txt: `${label} vence em < 6 meses` };
+    return { cls: 'b-ok', txt: `${label} válido` };
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+    toast('Copiado');
+  }
+
+  // ---------- criptografia ----------
+  async function deriveKey(pw, s) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: s, iterations: 310000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function encryptState() {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(JSON.stringify(state)));
+    return { v: 1, salt: b64(salt), iv: b64(iv), ct: b64(ct) };
+  }
+  async function save() {
+    const blob = await encryptState();
+    try { localStorage.setItem(KEY, JSON.stringify(blob)); }
+    catch { alert('Não foi possível salvar no navegador. Exporte um backup agora.'); }
+  }
+  function loadBlob() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+
+  // ---------- bloqueio ----------
+  function showLock() {
+    const exists = !!loadBlob();
+    $('#app').hidden = true; $('#lock').hidden = false; $('#formCard').hidden = true; $('#backupCard').hidden = true;
+    $('#lockTitle').textContent = exists ? 'Desbloquear' : 'Criar senha mestra';
+    $('#lockMsg').textContent = exists ? 'Digite sua senha mestra.' : 'Escolha uma senha forte. Ela não pode ser recuperada: se esquecer, os dados não abrem.';
+    $('#pw2wrap').hidden = exists;
+    $('#btnUnlock').textContent = exists ? 'Desbloquear' : 'Criar e entrar';
+    $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = '';
+    setTimeout(() => $('#pw1').focus(), 50);
+  }
+  function lock() {
+    closeOcr();
+    state = { people: [] }; cryptoKey = null; salt = null; editingId = null;
+    selected.clear(); open.clear(); $('#out').value = ''; $('#list').innerHTML = ''; $('#backupText').value = '';
+    clearTimeout(idleTimer); showLock();
+  }
+  function resetIdle() { clearTimeout(idleTimer); if (cryptoKey) idleTimer = setTimeout(lock, IDLE_MS); }
+  ['click', 'keydown', 'mousemove', 'touchstart'].forEach(ev => document.addEventListener(ev, resetIdle, { passive: true }));
+
+  async function handleUnlock() {
+    const err = $('#lockErr'); err.textContent = '';
+    if (!window.crypto || !crypto.subtle) { err.textContent = 'Este navegador não oferece criptografia aqui. Abra o arquivo no Chrome, Edge ou Firefox.'; return; }
+    const pw = $('#pw1').value; const blob = loadBlob();
+    try {
+      if (blob) {
+        salt = unb64(blob.salt); cryptoKey = await deriveKey(pw, salt);
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, cryptoKey, unb64(blob.ct));
+        state = JSON.parse(dec.decode(pt)); if (!Array.isArray(state.people)) state.people = [];
+      } else {
+        if (pw.length < 8) { err.textContent = 'Use pelo menos 8 caracteres.'; return; }
+        if (pw !== $('#pw2').value) { err.textContent = 'As senhas não conferem.'; return; }
+        salt = crypto.getRandomValues(new Uint8Array(16)); cryptoKey = await deriveKey(pw, salt);
+        state = { people: [] }; await save();
+      }
+    } catch { cryptoKey = null; err.textContent = 'Senha incorreta.'; return; }
+    $('#lock').hidden = true; $('#app').hidden = false; render(); resetIdle();
+  }
+  $('#btnUnlock').onclick = handleUnlock;
+  $('#pw1').onkeydown = $('#pw2').onkeydown = e => { if (e.key === 'Enter') handleUnlock(); };
+  $('#btnLock').onclick = lock;
+
+  // ---------- backup ----------
+  $('#btnExport').onclick = async () => {
+    const text = JSON.stringify(await encryptState());
+    const name = `backup-documentos-${new Date().toISOString().slice(0, 10)}.json`;
+    // 1) Chrome/Edge: escolher onde salvar
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Backup', accept: { 'application/json': ['.json'] } }] });
+        const w = await h.createWritable(); await w.write(text); await w.close();
+        toast('Backup salvo'); return;
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    // 2) download comum
+    try {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    } catch {}
+    // 3) sempre oferecer o texto, caso o navegador tenha bloqueado o download
+    $('#backupMsg').textContent = `Se o download não começou, copie o texto abaixo, cole no Bloco de Notas e salve como "${name}". O conteúdo está criptografado: só abre com a sua senha.`;
+    $('#backupText').value = text; $('#backupCard').hidden = false; $('#backupCard').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('#btnCopyBackup').onclick = () => copy($('#backupText').value);
+  $('#btnCloseBackup').onclick = () => { $('#backupCard').hidden = true; $('#backupText').value = ''; };
+
+  function importBlobText(txt) {
+    try {
+      const blob = JSON.parse(String(txt).trim());
+      if (!blob.salt || !blob.iv || !blob.ct) throw 0;
+      if (loadBlob() && !confirm('Isso substitui os dados atuais deste navegador pelo backup. Continuar?')) return;
+      localStorage.setItem(KEY, JSON.stringify(blob)); showLock(); $('#importText').value = '';
+      $('#lockMsg').textContent = 'Backup carregado. Digite a senha que foi usada nele.';
+    } catch { $('#lockErr').textContent = 'Backup inválido.'; }
+  }
+  $('#importFile').onchange = async e => { const f = e.target.files[0]; if (f) importBlobText(await f.text()); e.target.value = ''; };
+  $('#btnImportText').onclick = () => importBlobText($('#importText').value);
+
+  // ---------- lista ----------
+  function render() {
+    const list = $('#list'); const ppl = [...state.people].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+    $('#emptyHint').hidden = ppl.length > 0;
+    list.innerHTML = ppl.map(p => {
+      const badges = [expStatus(p.passaporteValidade, 'passaporte', true), expStatus(p.vistoEuaValidade, 'visto EUA', false)].filter(Boolean);
+      const rows = [
+        ['CPF', p.cpf], ['Nascimento', fmtDate(p.nascimento)], ['Nacionalidade', p.nacionalidade], ['Sexo', p.sexo],
+        ['E-mail', p.email], ['Celular', p.celular], ['RG/CIN', [p.rg, p.rgOrgao].filter(Boolean).join(' – ')],
+        ['Passaporte', p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
+        ['Visto EUA', p.vistoEua], ['Tipo do visto', p.vistoEuaTipo], ['Validade visto EUA', fmtDate(p.vistoEuaValidade)],
+        ['Endereço', fullAddress(p)], ['CEP', p.cep],
+        ['Obs.', p.obs]
+      ].filter(r => r[1]);
+      return `<div class="person">
+        <div class="row">
+          <input type="checkbox" data-sel="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="Selecionar ${esc(p.nome)}">
+          <span class="pname">${esc(p.nome || '(sem nome)')}</span>
+          ${badges.map(b => `<span class="badge ${b.cls}">${b.txt}</span>`).join('')}
+          <button class="sm" data-view="${p.id}">${open.has(p.id) ? 'Ocultar' : 'Ver'}</button>
+          <button class="sm" data-edit="${p.id}">Editar</button>
+        </div>
+        ${open.has(p.id) ? `<div class="details">${rows.map(([k, v]) =>
+          `<div class="field"><span>${k}</span><b>${esc(v)}</b><button class="sm" data-copy="${esc(v)}">⧉</button></div>`).join('')}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  $('#list').onclick = e => {
+    const t = e.target;
+    if (t.dataset.sel) { t.checked ? selected.add(t.dataset.sel) : selected.delete(t.dataset.sel); }
+    else if (t.dataset.view) { open.has(t.dataset.view) ? open.delete(t.dataset.view) : open.add(t.dataset.view); render(); }
+    else if (t.dataset.edit) openForm(t.dataset.edit);
+    else if (t.dataset.copy !== undefined) copy(t.dataset.copy);
+  };
+
+  // ---------- formulário ----------
+  function openForm(id) {
+    closeOcr();
+    editingId = id || null; const p = state.people.find(x => x.id === id) || { nacionalidade: 'Brasileira' };
+    FIELDS.forEach(f => $('#f_' + f).value = p[f] || '');
+    $('#formTitle').textContent = id ? 'Editar pessoa' : 'Nova pessoa';
+    $('#btnDelete').hidden = !id; $('#cpfErr').textContent = '';
+    lastCep = ($('#f_cep').value || '').replace(/\D/g, '');
+    $('#cepMsg').textContent = 'Ao digitar o CEP, o endereço é preenchido (consulta só o CEP no ViaCEP).';
+    const others = state.people.filter(x => x.id !== id && (x.logradouro || x.cep));
+    $('#addrFrom').innerHTML = '<option value="">Copiar endereço de outra pessoa…</option>' +
+      others.map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('');
+    $('#addrFrom').parentElement.hidden = !others.length;
+    $('#formCard').hidden = false; $('#formCard').scrollIntoView({ behavior: 'smooth' }); $('#f_nome').focus();
+  }
+  $('#btnAdd').onclick = () => openForm(null);
+  $('#btnCancel').onclick = () => { closeOcr(); $('#formCard').hidden = true; editingId = null; };
+  $('#f_cpf').oninput = e => { e.target.value = fmtCPF(e.target.value); $('#cpfErr').textContent = ''; };
+  $('#f_cpf').onblur = e => { if (e.target.value && !validCPF(e.target.value)) $('#cpfErr').textContent = 'CPF inválido – confira os dígitos.'; };
+  $('#f_celular').onblur = e => { e.target.value = fmtPhone(e.target.value); };
+  let lastCep = '';
+  async function lookupCep(force) {
+    const d = $('#f_cep').value.replace(/\D/g, ''), msg = $('#cepMsg');
+    if (d.length !== 8) { if (force) msg.textContent = 'Digite os 8 números do CEP.'; return; }
+    if (d === lastCep && !force) return; lastCep = d;
+    msg.textContent = 'Buscando…'; $('#btnCep').disabled = true;
+    try {
+      // envia somente o CEP; nenhum outro dado sai do computador
+      const r = await fetch(`https://viacep.com.br/ws/${d}/json/`, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+      if (!r.ok) throw new Error();
+      const j = await r.json();
+      if (j.erro) { msg.textContent = 'CEP não encontrado. Preencha o endereço manualmente.'; return; }
+      const set = (f, v) => { if (v) $('#f_' + f).value = v; };
+      set('logradouro', j.logradouro); set('bairro', j.bairro); set('cidade', j.localidade); set('uf', j.uf);
+      if (j.complemento && !$('#f_complemento').value) $('#f_complemento').value = j.complemento;
+      msg.textContent = j.logradouro ? 'Endereço encontrado — complete número e complemento.' : 'CEP geral da cidade: preencha rua e bairro.';
+      (j.logradouro ? $('#f_numero') : $('#f_logradouro')).focus();
+    } catch { lastCep = ''; msg.textContent = 'Não consegui consultar o CEP (sem internet?). Preencha manualmente.'; }
+    finally { $('#btnCep').disabled = false; }
+  }
+  $('#f_cep').oninput = e => { e.target.value = fmtCEP(e.target.value); if (e.target.value.length === 9) lookupCep(false); };
+  $('#btnCep').onclick = () => lookupCep(true);
+  $('#addrFrom').onchange = e => {
+    const src = state.people.find(x => x.id === e.target.value); if (!src) return;
+    ADDR.forEach(f => $('#f_' + f).value = src[f] || ''); e.target.value = ''; toast('Endereço copiado — clique em Salvar');
+  };
+  $('#btnSave').onclick = async () => {
+    const p = {}; FIELDS.forEach(f => p[f] = $('#f_' + f).value.trim());
+    p.passaporte = p.passaporte.toUpperCase(); p.vistoEua = p.vistoEua.toUpperCase(); p.uf = p.uf.toUpperCase(); p.cep = fmtCEP(p.cep); p.celular = fmtPhone(p.celular);
+    if (!p.nome) { alert('Informe o nome completo.'); return; }
+    if (p.cpf && !validCPF(p.cpf) && !confirm('O CPF parece inválido. Salvar mesmo assim?')) return;
+    if (editingId) { Object.assign(state.people.find(x => x.id === editingId), p); }
+    else { p.id = uid(); state.people.push(p); }
+    await save(); closeOcr(); $('#formCard').hidden = true; editingId = null; render(); toast('Salvo');
+  };
+  $('#btnDelete').onclick = async () => {
+    const p = state.people.find(x => x.id === editingId);
+    if (!p || !confirm(`Excluir ${p.nome}?`)) return;
+    state.people = state.people.filter(x => x.id !== editingId); selected.delete(editingId);
+    await save(); closeOcr(); $('#formCard').hidden = true; editingId = null; render(); toast('Excluído');
+  };
+
+  // ---------- leitura de foto (OCR local) ----------
+  let ocrBmp = null, ocrRot = 0; const workers = {};
+  const prog = t => { $('#ocrProgress').textContent = t; };
+  const STATUS = { 'loading tesseract core': 'Carregando o leitor', 'initializing tesseract': 'Preparando o leitor', 'loading language traineddata': 'Baixando dados de leitura', 'initializing api': 'Preparando', 'recognizing text': 'Lendo' };
+  function loadScript(src, integrity) {
+    return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.integrity = integrity; s.crossOrigin = 'anonymous';
+      s.onload = res; s.onerror = () => rej(new Error('não consegui baixar o leitor (sem internet?)')); document.head.appendChild(s); });
+  }
+  // 'por' lê o texto impresso; 'eng' lê melhor as linhas <<< (testado)
+  function getWorker(lang) {
+    if (!workers[lang]) workers[lang] = (async () => {
+      if (!window.Tesseract) await loadScript(TESS_URL, TESS_SRI);
+      return Tesseract.createWorker(lang, 1, {
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+        logger: m => { if (m.status && STATUS[m.status] && m.status !== 'recognizing text') prog(`${STATUS[m.status]}… ${Math.round((m.progress || 0) * 100)}%`); }
+      });
+    })().catch(e => { delete workers[lang]; throw e; });
+    return workers[lang];
+  }
+  function drawPreview() {
+    const b = ocrBmp, r = ocrRot % 360, sw = r % 180 ? b.height : b.width, sh = r % 180 ? b.width : b.height;
+    const k = Math.min(1, 2400 / Math.max(sw, sh)); const c = $('#ocrCanvas');
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    const g = c.getContext('2d'); g.save(); g.translate(c.width / 2, c.height / 2); g.rotate(r * Math.PI / 180);
+    g.drawImage(b, -b.width * k / 2, -b.height * k / 2, b.width * k, b.height * k); g.restore();
+  }
+  function rotated(src, deg) {
+    if (!deg) return src;
+    const c = document.createElement('canvas'), side = deg % 180;
+    c.width = side ? src.height : src.width; c.height = side ? src.width : src.height;
+    const g = c.getContext('2d'); g.translate(c.width / 2, c.height / 2); g.rotate(deg * Math.PI / 180); g.drawImage(src, -src.width / 2, -src.height / 2);
+    return c;
+  }
+  // cutTop: fração de cima descartada (foca nas linhas <<<, que ficam embaixo); mode: gray | otsu | local
+  function prep(src, cutTop, mode) {
+    const sy = Math.floor(src.height * (cutTop || 0)), h = src.height - sy;
+    const sc = cutTop ? 1800 / src.width : 1;
+    const c = document.createElement('canvas'); c.width = Math.round(src.width * sc); c.height = Math.max(1, Math.round(h * sc));
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, sy, src.width, h, 0, 0, c.width, c.height);
+    const W = c.width, H = c.height, im = g.getImageData(0, 0, W, H), d = im.data, G = new Float32Array(W * H);
+    let lo = 255, hi = 0;
+    for (let i = 0, j = 0; j < G.length; i += 4, j++) {
+      const v = mode === 'red' ? 255 - Math.min(255, Math.max(0, d[i] - (d[i + 1] + d[i + 2]) / 2) * 3)   // só o que é vermelho fica escuro
+                               : 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      G[j] = v; if (v < lo) lo = v; if (v > hi) hi = v; }
+    const span = Math.max(1, hi - lo); for (let j = 0; j < G.length; j++) G[j] = (G[j] - lo) * 255 / span;
+    if (mode === 'otsu') {
+      const hist = new Float64Array(256); G.forEach(v => hist[v | 0]++);
+      let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+      let wB = 0, sB = 0, best = 0, th = 128;
+      for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = G.length - wB; if (!wF) break; sB += t * hist[t];
+        const mB = sB / wB, mF = (sum - sB) / wF, between = wB * wF * (mB - mF) ** 2; if (between > best) { best = between; th = t; } }
+      for (let j = 0; j < G.length; j++) G[j] = G[j] > th ? 255 : 0;
+    } else if (mode === 'local') {
+      const I = new Float64Array((W + 1) * (H + 1)), r = 25;
+      for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += G[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } }
+      const out = new Float32Array(G.length);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1), y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+        const m = (I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+        out[y * W + x] = G[y * W + x] > m - 10 ? 255 : 0; }
+      G.set(out);
+    }
+    for (let i = 0, j = 0; j < G.length; i += 4, j++) d[i] = d[i + 1] = d[i + 2] = G[j];
+    g.putImageData(im, 0, 0); return c;
+  }
+  async function handleFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { prog(''); alert('Envie uma foto (JPG ou PNG). Para PDF, tire um print da página.'); return; }
+    closeOcr();
+    try { ocrBmp = await createImageBitmap(file); }
+    catch { alert('Não consegui abrir essa imagem. Se for foto de iPhone (HEIC), exporte como JPG.'); return; }
+    ocrRot = 0; drawPreview(); $('#ocrBox').hidden = false; $('#ocrResult').innerHTML = '';
+    prog('Confira se o documento está de pé e legível; use "Girar" se precisar.');
+  }
+  function closeOcr() {
+    if (ocrBmp) { try { ocrBmp.close(); } catch {} ocrBmp = null; }
+    const c = $('#ocrCanvas'); c.width = 0; c.height = 0;
+    $('#ocrBox').hidden = true; $('#ocrResult').innerHTML = ''; prog(''); $('#ocrFile').value = '';
+  }
+  $('#ocrFile').onchange = e => handleFile(e.target.files[0]);
+  $('#ocrRotate').onclick = () => { if (ocrBmp) { ocrRot += 90; drawPreview(); $('#ocrResult').innerHTML = ''; } };
+  $('#ocrClose').onclick = closeOcr;
+  const zone = $('#ocrZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+  document.addEventListener('paste', e => {
+    if ($('#formCard').hidden) return;
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) { e.preventDefault(); handleFile(item.getAsFile()); }
+  });
+
+  const MRZ_TRIES = [[0, 0.5, 'gray'], [0, 0.5, 'otsu'], [0, 0.7, 'local'], [270, 0.5, 'gray'], [90, 0.5, 'gray'], [180, 0.5, 'gray']];
+  $('#ocrRun').onclick = async () => {
+    if (!ocrBmp) return;
+    const btn = $('#ocrRun'); btn.disabled = true; $('#ocrResult').innerHTML = '';
+    prog('Carregando o leitor… (na primeira vez ele é baixado da internet; a foto continua aqui)');
+    try {
+      const we = await getWorker('eng');
+      await we.setParameters({ tessedit_pageseg_mode: '6', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+      let mrz = null, mrzRaw = '', turn = 0;
+      for (let i = 0; i < MRZ_TRIES.length && !mrz; i++) {
+        const [rot, cut, mode] = MRZ_TRIES[i];
+        prog(`Procurando as linhas <<< do documento… (tentativa ${i + 1} de ${MRZ_TRIES.length})`);
+        const t = (await we.recognize(prep(rotated($('#ocrCanvas'), rot), cut, mode))).data.text;
+        const m = DocParse.parseMRZ(t); if (m) { mrz = m; mrzRaw = t; turn = rot; }
+      }
+      if (turn) { ocrRot += turn; drawPreview(); }   // deixa a foto em pé para ler o resto
+      const wp = await getWorker('por');
+      await wp.setParameters({ tessedit_pageseg_mode: '3', tessedit_char_whitelist: '' });
+      prog('Lendo o texto impresso…');
+      const t1 = (await wp.recognize(prep($('#ocrCanvas'), 0, 'gray'))).data.text;
+      if (!mrz) mrz = DocParse.parseMRZ(t1);
+      const txt = DocParse.parseText(t1);
+      let redRaw = '';
+      const visaLike = (mrz && (mrz.fmt === 'VISA' || (mrz.l1Type !== 'P' && txt.isUsVisa))) || (!mrz && txt.isUsVisa);
+      if (visaLike && !$('#f_vistoEua').value) {
+        prog('Lendo o número do visto (impresso em vermelho)…');
+        await we.setParameters({ tessedit_pageseg_mode: '11', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' });
+        redRaw = (await we.recognize(prep($('#ocrCanvas'), 0, 'red'))).data.text;
+        await we.setParameters({ tessedit_pageseg_mode: '6', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+        txt.visaNums = DocParse.visaNumbers(redRaw);
+      }
+      showResults(mrz, txt, t1 + (mrzRaw ? '\n\n— linhas <<< —\n' + mrzRaw : '') + (redRaw ? '\n\n— tinta vermelha —\n' + redRaw : ''));
+      prog('');
+    } catch (e) {
+      prog('Não foi possível ler: ' + (e && e.message ? e.message : e) + '. Na primeira vez é preciso estar conectado à internet.');
+    } finally { btn.disabled = false; }
+  };
+
+  const LABELS = { nome: 'Nome', cpf: 'CPF', nascimento: 'Nascimento', sexo: 'Sexo', nacionalidade: 'Nacionalidade', rg: 'RG / CIN', rgOrgao: 'Órgão/UF',
+    passaporte: 'Passaporte', passaporteValidade: 'Validade passaporte', vistoEua: 'Visto EUA', vistoEuaTipo: 'Tipo do visto', vistoEuaValidade: 'Validade visto EUA' };
+  function merge(m, t, raw) {
+    const r = {};
+    ['nome', 'cpf', 'nascimento', 'sexo', 'rg', 'rgOrgao'].forEach(k => { if (t[k]) r[k] = t[k]; });
+    let kind = 'Leitura do texto da foto (sem as linhas <<<) — confira tudo';
+    if (m) {
+      if (m.birth) r.nascimento = m.birth; if (m.sex) r.sexo = m.sex; if (m.nat) r.nacionalidade = m.nat;
+      if (!r.nome && m.name) r.nome = m.name;
+      if (m.fmt === 'TD3' && m.l1Type !== 'P' && t.isUsVisa) m.fmt = 'VISA';
+      if (m.fmt === 'TD3' || m.fmt === 'VISA') {
+        // nome: o impresso tem acentos; se tiver palavras a mais ou a menos que o das linhas <<<, é lixo de leitura → usa o das linhas <<<
+        const words = s => String(s || '').trim().split(/\s+/).filter(Boolean).length;
+        if (m.name && t.nome && words(t.nome) !== words(m.name)) r.nome = m.name;
+        let doc = m.doc;
+        if (!doc) { // número ilegível nas linhas <<<: procura no texto impresso e confere pelo dígito de controle
+          const cands = m.fmt === 'VISA' ? (raw.match(/\b\d{8}\b/g) || []) : (t.passaportes || []);
+          doc = cands.find(c => DocParse.docMatches(c, m.docChk)) || '';
+        }
+        if (m.fmt === 'VISA') {
+          // no visto americano, o número nas linhas <<< é o do passaporte; o número do visto é o impresso em vermelho
+          if (doc) { r.passaporte = doc; r._passFromVisa = true; }
+          if (m.exp) r.vistoEuaValidade = m.exp; if (t.vistoTipo) r.vistoEuaTipo = t.vistoTipo;
+          const vn = (t.visaNums || [])[0]; if (vn) r.vistoEua = vn;
+          kind = 'Visto' + (m.issuer === 'USA' || t.isUsVisa ? ' americano' : '') + ' — datas conferidas pelos dígitos de controle' +
+            (vn ? '. Confira o número do visto (vermelho), que não tem dígito de controle' : '. Não consegui ler o número em vermelho: digite-o');
+        } else {
+          kind = 'Passaporte — dados conferidos pelos dígitos de controle' + (doc ? '' : ' — número não conferido, digite-o');
+          if (doc) r.passaporte = doc; if (m.exp) r.passaporteValidade = m.exp;
+        }
+      } else {
+        kind = 'Carteira de identidade (CIN/RG novo) — datas conferidas pelos dígitos de controle';
+        if (!r.rg && m.doc) r.rg = m.doc;
+      }
+    } else if (t.isUsVisa) {
+      kind = 'Visto americano (sem as linhas <<<) — confira tudo';
+      if (t.vistoTipo) r.vistoEuaTipo = t.vistoTipo; const vn = (t.visaNums || [])[0]; if (vn) r.vistoEua = vn;
+      if (t.passaporte) r.passaporte = t.passaporte;
+    } else if (t.passaporte) { r.passaporte = t.passaporte; if (t.validade) r.passaporteValidade = t.validade; }
+    return { r, kind };
+  }
+  const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  function showResults(mrz, txt, raw) {
+    const { r, kind } = merge(mrz, txt, raw);
+    const box = $('#ocrResult');
+    const cur = k => $('#f_' + k).value.trim();
+    const show = (k, v) => DATE_FIELDS.has(k) ? fmtDate(v) : v;
+    const found = Object.keys(LABELS).filter(k => r[k]);
+    if (!found.length) {
+      box.innerHTML = `<p class="err">Não encontrei dados nesta foto. Tente uma foto mais nítida, reta, sem reflexo e com o documento ocupando a imagem — ou gire a imagem.</p>
+        <details><summary>Ver o texto que foi lido</summary><pre>${esc(raw)}</pre></details>`;
+      return;
+    }
+    const plainAll = norm(raw + ' ' + (r.nome || ''));
+    const same = k => {
+      if (norm(show(k, cur(k))) === norm(show(k, r[k]))) return true;
+      // nome: se todas as palavras do nome cadastrado aparecem no documento, é o mesmo nome (diferença é só ruído de leitura)
+      if (k === 'nome') return norm(cur(k)) && cur(k).split(/\s+/).map(norm).filter(w => w.length > 1).every(w => plainAll.includes(w));
+      return false;
+    };
+    const missing = [], updates = [], ok = [], notes = [];
+    for (const k of found) {
+      if (!cur(k)) { missing.push(k); continue; }
+      if (same(k)) { ok.push(k); continue; }
+      if (k === 'passaporte' && r._passFromVisa) { notes.push(`O visto foi emitido com o passaporte ${esc(r[k])}; mantive o passaporte cadastrado (${esc(cur(k))}).`); continue; }
+      if (DATE_FIELDS.has(k) && k !== 'nascimento' && r[k] <= cur(k)) { notes.push(`${LABELS[k]} na foto (${fmtDate(r[k])}) é anterior à cadastrada — parece um documento mais antigo.`); continue; }
+      updates.push(k);
+    }
+    const row = (k, checked) => `<input type="checkbox" data-k="${k}" ${checked ? 'checked' : ''}><span style="font-size:13px">${LABELS[k]}</span><input data-v="${k}" value="${esc(show(k, r[k]))}">
+      ${checked ? '' : `<span class="cur">cadastrado: ${esc(show(k, cur(k)))} — marque para atualizar</span>`}`;
+    box.innerHTML = `<p style="margin:10px 0 0;font-size:14px"><b>${esc(kind)}</b></p>
+      ${missing.length ? `<h3>Dados que faltavam no cadastro</h3><div class="res">${missing.map(k => row(k, true)).join('')}</div>`
+                       : `<p class="hint">Nenhum dado faltante encontrado nesta foto.</p>`}
+      ${updates.length ? `<h3>Sugestões de atualização</h3><p class="hint">Diferentes do cadastro. Marque só o que realmente mudou.</p><div class="res">${updates.map(k => row(k, false)).join('')}</div>` : ''}
+      ${ok.length ? `<p class="hint">✓ Conferem com o cadastro: ${ok.map(k => LABELS[k]).join(', ')}.</p>` : ''}
+      ${notes.map(n => `<p class="hint">ℹ︎ ${n}</p>`).join('')}
+      ${missing.length || updates.length ? `<div class="row" style="margin-top:8px"><button class="pri" id="ocrApply">Usar no formulário</button></div>` : ''}
+      <details style="margin-top:10px"><summary>Ver o texto que foi lido</summary><pre>${esc(raw)}</pre></details>`;
+    if (!$('#ocrApply')) return;
+    $('#ocrApply').onclick = () => {
+      let n = 0;
+      box.querySelectorAll('input[data-k]').forEach(cb => {
+        if (!cb.checked) return; const k = cb.dataset.k; let v = box.querySelector(`input[data-v="${k}"]`).value.trim();
+        if (DATE_FIELDS.has(k)) v = toIso(v);
+        if (k === 'cpf') v = fmtCPF(v);
+        if (k === 'sexo') v = /^F/i.test(v) ? 'Feminino' : /^M/i.test(v) ? 'Masculino' : '';
+        if (!v) return; $('#f_' + k).value = v; n++;
+      });
+      if ($('#f_cpf').value && !validCPF($('#f_cpf').value)) $('#cpfErr').textContent = 'CPF inválido – confira os dígitos.';
+      closeOcr(); toast(`${n} campo(s) preenchido(s) — confira e clique em Salvar`);
+    };
+  }
+
+  // ---------- questionário ----------
+  function ticket(p, intl, visa) {
+    const L = [
+      `👤 Nome completo do passageiro: ${p.nome || ''}`,
+      `🔢 CPF: ${p.cpf || ''}`,
+      `🗓️ Data de nascimento: ${fmtDate(p.nascimento)}`,
+      `🌍 Nacionalidade: ${p.nacionalidade || ''}`,
+      `👤 Sexo: ${p.sexo || ''}`,
+      `📧 E-mail: ${p.email || ''}`,
+      `📱Celular: ${p.celular || ''}`
+    ];
+    if (intl) L.push(`🛂 Nr Passaporte e Validade (voo internacional): ${p.passaporte || ''}${p.passaporteValidade ? ' – validade ' + fmtDate(p.passaporteValidade) : ''}`);
+    if (visa) L.push(`🇺🇸 Visto americano: ${p.vistoEua || ''}${p.vistoEuaTipo ? ' (' + p.vistoEuaTipo + ')' : ''}${p.vistoEuaValidade ? ' – validade ' + fmtDate(p.vistoEuaValidade) : ''}`);
+    return L.join('\n');
+  }
+  $('#btnGen').onclick = () => {
+    const intl = $('#intl').checked, visa = $('#incVisa').checked;
+    const ppl = state.people.filter(p => selected.has(p.id));
+    const warn = [];
+    if (!ppl.length) { $('#genWarn').textContent = 'Selecione ao menos uma pessoa na lista.'; $('#out').value = ''; return; }
+    ppl.forEach(p => {
+      const miss = ['cpf', 'nascimento', 'sexo'].filter(f => !p[f]);
+      if (miss.length) warn.push(`${p.nome}: faltando ${miss.join(', ')}`);
+      if (intl) { if (!p.passaporte) warn.push(`${p.nome}: sem passaporte cadastrado`);
+        const st = expStatus(p.passaporteValidade, 'passaporte', true); if (st && st.cls !== 'b-ok') warn.push(`${p.nome}: ${st.txt}`); }
+      if (visa) { if (!p.vistoEua) warn.push(`${p.nome}: sem visto americano cadastrado`);
+        const st = expStatus(p.vistoEuaValidade, 'visto EUA', false); if (st && st.cls !== 'b-ok') warn.push(`${p.nome}: ${st.txt}`); }
+    });
+    $('#genWarn').textContent = warn.join(' · ');
+    $('#out').value = ppl.map(p => ticket(p, intl, visa)).join('\n\n');
+  };
+  $('#btnCopyOut').onclick = () => { if ($('#out').value) copy($('#out').value); };
+
+  showLock();
+})();
+</script>
+</body>
+</html>
