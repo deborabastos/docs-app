@@ -51,6 +51,12 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
 [hidden]{display:none!important}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
 .toast.on{opacity:1}
+.qmap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 12px;align-items:center;margin:10px 0}
+.qmap .q{font-size:13px;overflow-wrap:anywhere}
+.qmap select{padding:5px 8px;font-size:13px}
+.qmap .q.none{color:var(--warn)}
+.extra{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;margin-bottom:8px}
+@media (max-width:560px){.qmap{grid-template-columns:1fr}.qmap select{margin-bottom:8px}}
 </style>
 </head>
 <body>
@@ -110,18 +116,33 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
     </div>
 
     <div class="card">
-      <h2>Questionário de passageiros</h2>
-      <div class="row" style="margin-bottom:10px;gap:18px">
-        <label class="check"><input type="checkbox" id="intl"> Voo internacional (incluir passaporte)</label>
-        <label class="check"><input type="checkbox" id="incVisa"> Incluir visto americano</label>
-      </div>
-      <p class="hint" style="margin-bottom:10px">Marque as pessoas na lista acima e clique em Gerar.</p>
+      <h2>Questionário</h2>
+      <p class="hint" style="margin:-4px 0 12px">Cole as perguntas de qualquer formulário (uma por linha, pode ser um formulário já preenchido) ou escolha um modelo. Marque as pessoas na lista acima e clique em Preencher. Tudo acontece neste aparelho.</p>
       <div class="row" style="margin-bottom:10px">
-        <button class="pri" id="btnGen">Gerar</button>
+        <select id="qModel" style="width:auto;flex:1;min-width:200px"></select>
+        <button id="btnSaveModel">Salvar como modelo</button>
+        <button class="danger" id="btnDelModel" hidden>Excluir modelo</button>
+      </div>
+      <label for="qText">Perguntas</label>
+      <textarea id="qText" style="min-height:150px" placeholder="Nome completo:&#10;CPF:&#10;Data de nascimento:&#10;Matrícula:"></textarea>
+      <details id="qMapWrap" style="margin:10px 0">
+        <summary>Conferir o que cada pergunta busca <span id="qMapCount"></span></summary>
+        <div class="qmap" id="qMap"></div>
+      </details>
+      <div class="row" style="margin-bottom:10px">
+        <button class="pri" id="btnGen">Preencher</button>
         <button id="btnCopyOut">Copiar</button>
       </div>
       <p class="err" id="genWarn"></p>
+      <div id="qMissing" hidden style="margin-bottom:10px"></div>
       <textarea id="out" readonly></textarea>
+      <details style="margin-top:10px">
+        <summary>Dicas</summary>
+        <p class="hint">• Perguntas que não estão no cadastro (matrícula, cargo, estado civil…) podem virar <b>campos extras</b> da pessoa: o app oferece criá-los depois de preencher.<br>
+        • Para escrever um texto livre, use marcadores: <code>Sou {primeiro nome}, CPF {cpf}, matrícula {Matrícula}.</code><br>
+        • A pergunta pode pedir o formato: <i>(somente números)</i>, <i>(MM/DD/AAAA)</i>, <i>(M/F)</i>, <i>(em maiúsculas)</i>, <i>com DDI</i>. Perguntas em inglês recebem sexo e nacionalidade em inglês.<br>
+        • Se o app errar o campo, corrija em “Conferir o que cada pergunta busca”; a escolha fica guardada no modelo.</p>
+      </details>
     </div>
 
     <div class="card">
@@ -200,6 +221,10 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       <div class="grid">
         <div class="full"><label>Observações</label><input id="f_obs" placeholder="ex.: nº de fidelidade, título de eleitor..."></div>
       </div>
+      <h3 id="extrasTitle">Campos extras</h3>
+      <p class="hint" style="margin:-4px 0 8px">Qualquer outro dado que os formulários pedem (matrícula, cargo, estado civil…). O nome do campo é o que o questionário procura.</p>
+      <div id="extras"></div>
+      <button class="sm" id="btnAddExtra">+ Adicionar campo</button>
       <div class="row" style="margin-top:14px">
         <button class="pri" id="btnSave">Salvar</button>
         <button id="btnCancel">Cancelar</button>
@@ -362,6 +387,269 @@ const DocParse = (() => {
 </script>
 
 <script>
+// ---------- questionário livre: lê perguntas em texto e procura cada uma no cadastro (tudo local) ----------
+const Questionario = (() => {
+  const norm = s => ' ' + String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+
+  // campos que o questionário sabe responder (chave → rótulo mostrado e usado nos marcadores {chave})
+  const CAMPOS = [
+    ['nome', 'Nome completo'], ['primeiroNome', 'Primeiro nome'], ['sobrenome', 'Sobrenome(s)'], ['ultimoSobrenome', 'Último sobrenome'],
+    ['cpf', 'CPF'], ['nascimento', 'Data de nascimento'], ['idade', 'Idade'], ['nacionalidade', 'Nacionalidade'], ['sexo', 'Sexo'],
+    ['email', 'E-mail'], ['celular', 'Celular'], ['rg', 'RG / CIN'], ['rgOrgao', 'Órgão emissor do RG'],
+    ['passaporte', 'Nº do passaporte'], ['passaporteValidade', 'Validade do passaporte'],
+    ['vistoEua', 'Nº do visto americano'], ['vistoEuaTipo', 'Tipo do visto americano'], ['vistoEuaValidade', 'Validade do visto americano'],
+    ['endereco', 'Endereço completo'], ['logradouro', 'Logradouro'], ['numero', 'Número (endereço)'], ['complemento', 'Complemento'],
+    ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF'], ['cep', 'CEP'], ['obs', 'Observações']
+  ];
+  const LABEL = Object.fromEntries(CAMPOS);
+
+  // sinônimos (já normalizados: minúsculas, sem acento, só letras/números). A expressão mais longa vence.
+  // '@nao' = assunto que existe em formulários, mas não está no cadastro (evita responder errado).
+  // '@validade', '@tipo', '@numero' = palavras genéricas resolvidas pelo documento citado na mesma linha.
+  const REGRAS = {
+    '@nao': ['nome da mae', 'nome do pai', 'nome de mae', 'filiacao', 'nome social', 'nome do responsavel', 'nome da empresa',
+      'nome do contato', 'contato de emergencia', 'telefone de emergencia', 'telefone comercial', 'telefone fixo', 'telefone residencial',
+      'estado civil', 'cidade de nascimento', 'local de nascimento', 'naturalidade', 'pais de nascimento', 'estado de nascimento',
+      'uf de nascimento', 'data de emissao', 'data da emissao', 'emissao', 'profissao', 'ocupacao', 'renda', 'titulo de eleitor', 'cnh',
+      'carteira de motorista', 'conjuge', 'nome do conjuge', 'tipo sanguineo', 'tipo de documento', 'mother', 'father', 'place of birth',
+      'city of birth', 'country of birth', 'issue date', 'date of issue', 'emergency', 'occupation', 'marital status', 'spouse'],
+    nome: ['nome', 'nome completo', 'nome do passageiro', 'nome completo do passageiro', 'nome e sobrenome', 'name', 'full name'],
+    primeiroNome: ['primeiro nome', 'prenome', 'first name', 'given name', 'given names'],
+    sobrenome: ['sobrenome', 'sobrenomes', 'last name', 'surname', 'family name'],
+    ultimoSobrenome: ['ultimo sobrenome'],
+    cpf: ['cpf'],
+    nascimento: ['data de nascimento', 'nascimento', 'data nasc', 'dt nasc', 'dt de nascimento', 'nasc', 'date of birth', 'birth date',
+      'birthdate', 'dob', 'birthday', 'aniversario'],
+    idade: ['idade', 'age'],
+    nacionalidade: ['nacionalidade', 'nationality', 'cidadania', 'citizenship'],
+    sexo: ['sexo', 'genero', 'sex', 'gender'],
+    email: ['e mail', 'email', 'endereco de e mail', 'endereco de email', 'endereco eletronico', 'correio eletronico', 'mail', 'e mail address', 'email address'],
+    celular: ['celular', 'telefone', 'telefone celular', 'fone', 'tel', 'whatsapp', 'whats', 'zap', 'telefone para contato', 'telefone de contato',
+      'numero de contato', 'contato telefonico', 'numero de telefone', 'numero do celular', 'phone', 'mobile', 'cell', 'cellphone',
+      'phone number', 'telephone', 'mobile number'],
+    rg: ['rg', 'r g', 'identidade', 'carteira de identidade', 'cin', 'documento de identidade', 'registro geral', 'numero do rg', 'id', 'id number'],
+    rgOrgao: ['orgao emissor', 'orgao expedidor', 'emissor', 'expedidor', 'uf emissor', 'emissor expedidor'],
+    passaporte: ['passaporte', 'passport', 'numero do passaporte', 'passport number', 'nr passaporte'],
+    passaporteValidade: ['validade do passaporte', 'validade passaporte', 'vencimento do passaporte', 'passaporte valido ate',
+      'data de validade do passaporte', 'data de vencimento do passaporte', 'passport expiry', 'passport expiration',
+      'passport expiration date', 'passport expiry date'],
+    vistoEua: ['visto', 'visto americano', 'visto eua', 'visto dos eua', 'visto norte americano', 'visa', 'us visa', 'numero do visto', 'visa number'],
+    vistoEuaTipo: ['tipo de visto', 'tipo do visto', 'classe do visto', 'visa type', 'visa class'],
+    vistoEuaValidade: ['validade do visto', 'vencimento do visto', 'validade do visto americano', 'visa expiration', 'visa expiry', 'visa expiration date'],
+    '@validade': ['validade', 'valido ate', 'vencimento', 'vence', 'vence em', 'expira', 'expira em', 'data de validade', 'data de vencimento',
+      'expiry', 'expiration', 'expiration date', 'expiry date', 'valid until', 'exp'],
+    '@tipo': ['tipo', 'classe', 'categoria', 'type', 'class'],
+    '@numero': ['numero', 'nr', 'n', 'num', 'nro', 'number'],
+    endereco: ['endereco', 'endereco completo', 'endereco residencial', 'endereco de residencia', 'residencia', 'address', 'home address', 'morada'],
+    logradouro: ['logradouro', 'rua', 'avenida', 'quadra', 'street'],
+    complemento: ['complemento', 'apto', 'apartamento', 'apt', 'complement'],
+    bairro: ['bairro', 'setor', 'neighborhood'],
+    cidade: ['cidade', 'municipio', 'localidade', 'city'],
+    uf: ['uf', 'estado', 'state'],
+    cep: ['cep', 'codigo postal', 'codigo de enderecamento postal', 'zip', 'zip code', 'postal code'],
+    obs: ['observacoes', 'observacao', 'obs']
+  };
+  const EN = new Set(['name', 'full name', 'first name', 'given name', 'given names', 'last name', 'surname', 'family name', 'date of birth',
+    'birth date', 'birthdate', 'dob', 'birthday', 'age', 'nationality', 'citizenship', 'sex', 'gender', 'phone', 'mobile', 'cell', 'cellphone',
+    'phone number', 'telephone', 'mobile number', 'address', 'home address', 'passport', 'passport number', 'passport expiry',
+    'passport expiration', 'passport expiration date', 'passport expiry date', 'visa', 'us visa', 'visa number', 'visa type', 'visa class',
+    'visa expiration', 'visa expiry', 'visa expiration date', 'street', 'city', 'state', 'zip', 'zip code', 'postal code', 'neighborhood']);
+  const FRASES = Object.entries(REGRAS).flatMap(([k, fs]) => fs.map(f => ({ k, f: ' ' + f + ' ' })));
+  const ADDR = ['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'cep'];
+
+  function achar(n) {   // todas as ocorrências, sem as que estão dentro de uma expressão mais longa
+    const hits = [];
+    for (const { k, f } of FRASES) { let i = n.indexOf(f); while (i >= 0) { hits.push({ k, f: f.trim(), a: i + 1, b: i + f.length - 1 }); i = n.indexOf(f, i + 1); } }
+    return hits.filter(h => !hits.some(o => o !== h && o.a <= h.a && o.b >= h.b && (o.b - o.a) > (h.b - h.a))).sort((x, y) => x.a - y.a);
+  }
+
+  // Identifica o que a linha está pedindo. Devolve { campos: [...], nao: bool, mods }
+  function analisar(linha) {
+    const raw = String(linha || '');
+    const n = norm(raw);
+    const fora = norm(raw.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '));
+    const mods = {
+      digitos: /somente numeros|apenas numeros|so numeros|sem pontuacao|sem pontos|sem tracos? |only numbers|numbers only|digits only/.test(n),
+      maiusc: /maiuscul|caixa alta|uppercase|capital letters|block letters/.test(n),
+      data: / mm dd (aaaa|yyyy|aa|yy) /.test(n) ? 'us' : / (aaaa|yyyy) mm dd /.test(n) ? 'iso' : 'br',
+      mf: / (m f|f m) /.test(n), ddi: / ddi |\+55|codigo do pais|country code/.test(n.replace(/ 55 /, ' +55 ')) || /\+55/.test(raw),
+      en: false
+    };
+    let hits = achar(n);
+    if (!hits.length) return { campos: [], nao: false, mods };
+    // dentro de parênteses só valem palavras genéricas, se fora deles já há um campo ("Nome (como no passaporte)")
+    const temFora = achar(fora).some(h => !h.k.startsWith('@'));
+    if (temFora) { const dentro = new Set(achar(fora).map(h => h.f + '|' + h.k)); hits = hits.filter(h => h.k.startsWith('@') || dentro.has(h.f + '|' + h.k)); }
+    mods.en = hits.some(h => EN.has(h.f));
+    if (hits.some(h => h.k === '@nao')) return { campos: [], nao: true, mods };
+    const ks = hits.map(h => h.k);
+    const temVisto = ks.some(k => k.startsWith('vistoEua')), temPass = ks.some(k => k.startsWith('passaporte'));
+    const temDoc = temVisto || temPass || ks.includes('rg') || ks.includes('cpf');
+    let out = [];
+    for (const k of ks) {
+      if (k === '@validade') { if (temVisto) out.push('vistoEuaValidade'); else if (temPass) out.push('passaporteValidade'); }
+      else if (k === '@tipo') { if (temVisto) out.push('vistoEuaTipo'); }
+      else if (k === '@numero') { if (!temDoc && ks.length === 1) out.push('numero'); else if (!temDoc && ks.some(x => ADDR.includes(x)) && !ks.includes('endereco')) out.push('numero'); }
+      else out.push(k);
+    }
+    if (out.includes('endereco')) out = out.filter(k => !ADDR.includes(k));
+    out = [...new Set(out)];
+    return { campos: out, nao: false, mods };
+  }
+
+  const fmtD = (iso, m) => { if (!iso) return ''; const [y, mo, d] = iso.split('-'); return m === 'us' ? `${mo}/${d}/${y}` : m === 'iso' ? iso : `${d}/${mo}/${y}`; };
+  function idade(iso) { if (!iso) return ''; const b = new Date(iso + 'T00:00:00'), t = new Date(); let a = t.getFullYear() - b.getFullYear();
+    if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) a--; return String(a); }
+  function enderecoCompleto(p) {
+    const l1 = [p.logradouro, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' – ' + p.complemento : '');
+    const city = [p.cidade, p.uf].filter(Boolean).join('/');
+    return [l1, p.bairro, city, p.cep ? 'CEP ' + p.cep : ''].filter(Boolean).join(' – ');
+  }
+  const NAC_EN = { brasileira: 'Brazilian', brasileiro: 'Brazilian', americana: 'American', americano: 'American', portuguesa: 'Portuguese',
+    portugues: 'Portuguese', italiana: 'Italian', italiano: 'Italian', espanhola: 'Spanish', espanhol: 'Spanish', argentina: 'Argentinian',
+    argentino: 'Argentinian', alema: 'German', alemao: 'German', francesa: 'French', frances: 'French' };
+
+  function valor(p, k, mods = {}) {
+    const nome = String(p.nome || '').trim().split(/\s+/).filter(Boolean);
+    let v;
+    switch (k) {
+      case 'primeiroNome': v = nome[0] || ''; break;
+      case 'sobrenome': v = nome.slice(1).join(' '); break;
+      case 'ultimoSobrenome': v = nome.length > 1 ? nome[nome.length - 1] : ''; break;
+      case 'nascimento': case 'passaporteValidade': case 'vistoEuaValidade': v = fmtD(p[k], mods.data); break;
+      case 'idade': v = idade(p.nascimento); break;
+      case 'endereco': v = enderecoCompleto(p); break;
+      case 'sexo': v = p.sexo || ''; if (v && mods.mf) v = v[0].toUpperCase(); else if (v && mods.en) v = /^f/i.test(v) ? 'Female' : 'Male'; break;
+      case 'nacionalidade': v = p.nacionalidade || ''; if (v && mods.en) v = NAC_EN[norm(v).trim()] || v; break;
+      case 'celular': v = p.celular || ''; if (v && mods.ddi && !/^\+/.test(v)) v = '+55 ' + v; break;
+      default: v = p[k] == null ? '' : String(p[k]);
+    }
+    if (mods.digitos && !['nome', 'primeiroNome', 'sobrenome', 'ultimoSobrenome', 'email', 'sexo', 'nacionalidade', 'endereco', 'obs'].includes(k)) v = v.replace(/\D/g, '');
+    if (mods.maiusc) v = v.toUpperCase();
+    return v;
+  }
+
+  // junta vários campos pedidos na mesma linha ("Nr Passaporte e Validade" → "AB123 – validade 01/02/2030")
+  function juntar(p, campos, mods) {
+    const partes = [];
+    campos.forEach((k, i) => {
+      const v = valor(p, k, mods); if (!v) return;
+      if (k === 'uf' && campos[i - 1] === 'cidade' && partes.length) { partes[partes.length - 1] += '/' + v; return; }
+      partes.push(/Validade$/.test(k) && campos.length > 1 ? (mods.en ? 'exp. ' : 'validade ') + v : v);
+    });
+    return partes.join(' – ');
+  }
+
+  function chaveMarcador(nome) {
+    const n = norm(nome).trim();
+    const c = CAMPOS.find(([k, l]) => norm(k).trim() === n || norm(l).trim() === n);
+    if (c) return c[0];
+    const a = analisar(nome); return a.campos.length === 1 ? a.campos[0] : null;
+  }
+
+  // separa pergunta e resposta antiga: "CPF: 123" → ["CPF:", " 123"]; sem dois-pontos, a linha toda é a pergunta
+  function separar(l) {
+    const i = l.search(/[:：]/);
+    return i >= 0 ? [l.slice(0, i + 1), l.slice(i + 1)] : [l.replace(/[\s_.…]*$/, '').replace(/\s*(\[\s*\]|\(\s*\))\s*$/, ''), ''];
+  }
+  const chave = l => norm(separar(l)[0]).trim();
+
+  // campos extras da pessoa (rótulo livre): vale se o rótulo é a pergunta ou aparece inteiro nela
+  function extraDe(p, pergunta) {
+    const n = norm(pergunta); let melhor = null;
+    for (const e of (p && p.extras) || []) {
+      const r = norm(e.rotulo).trim(); if (r.length < 2) continue;
+      if ((n.trim() === r || n.includes(' ' + r + ' ')) && (!melhor || r.length > norm(melhor.rotulo).trim().length)) melhor = e;
+    }
+    return melhor;
+  }
+
+  // escolha manual por linha: 'auto' (padrão), '-' (deixar sem resposta), uma chave de campo ou 'x:<rótulo extra>'
+  function plano(linha, escolha, p) {
+    if (!String(linha).trim()) return { tipo: 'vazia' };
+    if (/\{[^}]+\}/.test(linha)) return { tipo: 'marcadores' };
+    const [perg, resp] = separar(linha);
+    const temDois = /[:：]/.test(linha);
+    const a = analisar(perg);
+    const base = { perg, resp, temDois, mods: a.mods };
+    if (escolha === '-') return { ...base, tipo: 'texto', manual: true };
+    if (escolha && escolha.startsWith('x:')) return { ...base, tipo: 'extra', rotulo: escolha.slice(2), manual: true };
+    if (escolha && escolha !== 'auto' && LABEL[escolha]) return { ...base, tipo: 'campo', campos: [escolha], manual: true };
+    // sem dois-pontos nem "?": só responde linhas curtas e sem números (evita mexer em respostas de várias linhas)
+    const solta = !temDois && !/\?\s*$/.test(perg);
+    if (solta && (/\d/.test(perg) || perg.trim().split(/\s+/).length > 6)) return { ...base, tipo: 'texto' };
+    const ex = p && extraDe(p, perg);
+    if (ex) return { ...base, tipo: 'extra', rotulo: ex.rotulo };
+    if (a.campos.length) return { ...base, tipo: 'campo', campos: a.campos };
+    return { ...base, tipo: 'texto', nao: a.nao, pergunta: !solta || a.nao };
+  }
+
+  function responder(pl, v, linha) {
+    if (!v) return pl.temDois ? pl.perg.replace(/\s+$/, '') : linha;
+    const b = pl.perg.replace(/\s+$/, '');
+    return /[:?：]$/.test(b) ? b + ' ' + v : b + ': ' + v;
+  }
+
+  // monta as respostas de uma pessoa. escolhas: { [chave(linha)]: 'auto' | '-' | chave | 'x:rótulo' }
+  function preencher(texto, p, escolhas = {}) {
+    const faltando = [], semResposta = [];
+    const linhas = String(texto || '').replace(/\r/g, '').split('\n').map(l => {
+      const pl = plano(l, escolhas[chave(l)], p);
+      if (pl.tipo === 'vazia') return l;
+      if (pl.tipo === 'marcadores') return l.replace(/\{([^}]+)\}/g, (m, nome) => {
+        const ex = extraDe(p, nome); if (ex && norm(ex.rotulo).trim() === norm(nome).trim()) { if (!ex.valor) faltando.push(ex.rotulo); return ex.valor || ''; }
+        const k = chaveMarcador(nome); if (!k) { semResposta.push(m); return m; }
+        const v = valor(p, k, analisar(l).mods); if (!v) faltando.push(LABEL[k]); return v;
+      });
+      if (pl.tipo === 'texto') {
+        if (!pl.pergunta || pl.manual) return l;
+        semResposta.push(pl.perg.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[:：]\s*$/, '').trim());
+        return pl.temDois ? pl.perg.replace(/\s+$/, '') : l;   // tira a resposta antiga, se o formulário colado já vinha preenchido
+      }
+      if (pl.tipo === 'extra') {
+        const e = ((p && p.extras) || []).find(x => norm(x.rotulo).trim() === norm(pl.rotulo).trim());
+        let v = e ? String(e.valor || '') : ''; if (v && pl.mods.maiusc) v = v.toUpperCase();
+        if (!v) faltando.push(e ? e.rotulo : pl.rotulo);
+        return responder(pl, v, l);
+      }
+      const v = juntar(p, pl.campos, pl.mods);
+      if (!v) faltando.push(pl.campos.map(k => LABEL[k]).join(' + '));
+      else pl.campos.forEach(k => { if (!valor(p, k, pl.mods)) faltando.push(LABEL[k]); });
+      return responder(pl, v, l);
+    });
+    return { texto: linhas.join('\n'), faltando: [...new Set(faltando)], semResposta: [...new Set(semResposta)] };
+  }
+
+  // perguntas sem correspondência, com a resposta que já veio colada (para criar campos extras)
+  function perguntasSemCampo(texto, p, escolhas = {}) {
+    const out = [];
+    for (const l of String(texto || '').replace(/\r/g, '').split('\n')) {
+      const pl = plano(l, escolhas[chave(l)], p);
+      if (pl.tipo !== 'texto' || !pl.pergunta || pl.manual) continue;
+      const rotulo = pl.perg.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[:：]\s*$/, '').trim();
+      const resp = pl.resp.replace(/^[\s_.…]+|[\s_.…]+$/g, '').trim();
+      if (rotulo && !out.some(o => norm(o.rotulo) === norm(rotulo))) out.push({ rotulo, valor: resp });
+    }
+    return out;
+  }
+
+  const MODELOS = [
+    { id: 'voo-nac', nome: 'Passageiros – voo nacional', texto:
+      '👤 Nome completo do passageiro:\n🔢 CPF:\n🗓️ Data de nascimento:\n🌍 Nacionalidade:\n👤 Sexo:\n📧 E-mail:\n📱Celular:' },
+    { id: 'voo-int', nome: 'Passageiros – voo internacional', texto:
+      '👤 Nome completo do passageiro:\n🔢 CPF:\n🗓️ Data de nascimento:\n🌍 Nacionalidade:\n👤 Sexo:\n📧 E-mail:\n📱Celular:\n🛂 Nr Passaporte e Validade (voo internacional):' },
+    { id: 'voo-eua', nome: 'Passageiros – EUA (passaporte + visto)', texto:
+      '👤 Nome completo do passageiro:\n🔢 CPF:\n🗓️ Data de nascimento:\n🌍 Nacionalidade:\n👤 Sexo:\n📧 E-mail:\n📱Celular:\n🛂 Nr Passaporte e Validade (voo internacional):\n🇺🇸 Visto americano (número, tipo e validade):' },
+    { id: 'cadastro', nome: 'Cadastro geral (hotel, clínica, escola…)', texto:
+      'Nome completo:\nCPF:\nRG e órgão emissor:\nData de nascimento:\nE-mail:\nTelefone:\nEndereço completo:' }
+  ];
+
+  return { CAMPOS, LABEL, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
+})();
+</script>
+
+<script>
 (() => {
   const KEY = 'docsFamilia.vault.v1';
   const IDLE_MS = 5 * 60 * 1000;
@@ -435,7 +723,11 @@ const DocParse = (() => {
     dekRaw = raw; dek = await aesKey(raw); vault = blob;
     state = JSON.parse(dec.decode(await unseal(dek, blob.data))); if (!Array.isArray(state.people)) state.people = [];
   }
-  function enterApp() { $('#lock').hidden = true; $('#app').hidden = false; render(); renderBio(); resetIdle(); }
+  function enterApp() {
+    $('#lock').hidden = true; $('#app').hidden = false; render(); renderBio(); resetIdle();
+    const u = state.qUltimo || {}; $('#qText').value = u.texto || ''; qEscolhas = { ...(u.escolhas || {}) }; qModelId = u.modelo || '';
+    $('#out').value = ''; $('#genWarn').textContent = ''; $('#qMissing').hidden = true; renderModelos(); renderMapa();
+  }
 
   // ---------- biometria (Touch ID / Face ID) ----------
   const bioSupported = () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
@@ -521,6 +813,7 @@ const DocParse = (() => {
     closeOcr();
     state = { people: [] }; dek = null; if (dekRaw) dekRaw.fill(0); dekRaw = null; vault = null; editingId = null;
     selected.clear(); open.clear(); $('#out').value = ''; $('#list').innerHTML = ''; $('#backupText').value = '';
+    $('#qText').value = ''; $('#qMap').innerHTML = ''; $('#qMissing').innerHTML = ''; $('#qMissing').hidden = true; $('#extras').innerHTML = ''; qEscolhas = {}; qModelId = '';
     clearTimeout(idleTimer); showLock();
   }
   function resetIdle() { clearTimeout(idleTimer); if (dek) idleTimer = setTimeout(lock, IDLE_MS); }
@@ -603,7 +896,7 @@ const DocParse = (() => {
         ['Passaporte', p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
         ['Visto EUA', p.vistoEua], ['Tipo do visto', p.vistoEuaTipo], ['Validade visto EUA', fmtDate(p.vistoEuaValidade)],
         ['Endereço', fullAddress(p)], ['CEP', p.cep],
-        ['Obs.', p.obs]
+        ['Obs.', p.obs], ...(p.extras || []).map(e => [esc(e.rotulo), e.valor])
       ].filter(r => r[1]);
       return `<div class="person">
         <div class="row">
@@ -631,6 +924,7 @@ const DocParse = (() => {
     closeOcr();
     editingId = id || null; const p = state.people.find(x => x.id === id) || { nacionalidade: 'Brasileira' };
     FIELDS.forEach(f => $('#f_' + f).value = p[f] || '');
+    renderExtras(p.extras || []);
     $('#formTitle').textContent = id ? 'Editar pessoa' : 'Nova pessoa';
     $('#btnDelete').hidden = !id; $('#cpfErr').textContent = '';
     lastCep = ($('#f_cep').value || '').replace(/\D/g, '');
@@ -641,6 +935,14 @@ const DocParse = (() => {
     $('#addrFrom').parentElement.hidden = !others.length;
     $('#formCard').hidden = false; $('#formCard').scrollIntoView({ behavior: 'smooth' }); $('#f_nome').focus();
   }
+  function renderExtras(list) {
+    $('#extras').innerHTML = list.map(e => `<div class="extra"><input class="x-r" placeholder="Nome do campo (ex.: Matrícula)" value="${esc(e.rotulo)}"><input class="x-v" placeholder="Valor" value="${esc(e.valor)}"><button class="sm" data-xdel title="Remover campo">✕</button></div>`).join('');
+  }
+  function readExtras() {
+    return [...document.querySelectorAll('#extras .extra')].map(d => ({ rotulo: d.querySelector('.x-r').value.trim(), valor: d.querySelector('.x-v').value.trim() })).filter(e => e.rotulo);
+  }
+  $('#btnAddExtra').onclick = () => { renderExtras([...readExtras(), { rotulo: '', valor: '' }]); const r = document.querySelectorAll('#extras .x-r'); r[r.length - 1].focus(); };
+  $('#extras').onclick = e => { if (e.target.dataset.xdel !== undefined) e.target.closest('.extra').remove(); };
   $('#btnAdd').onclick = () => openForm(null);
   $('#btnCancel').onclick = () => { closeOcr(); $('#formCard').hidden = true; editingId = null; };
   $('#f_cpf').oninput = e => { e.target.value = fmtCPF(e.target.value); $('#cpfErr').textContent = ''; };
@@ -675,11 +977,14 @@ const DocParse = (() => {
   $('#btnSave').onclick = async () => {
     const p = {}; FIELDS.forEach(f => p[f] = $('#f_' + f).value.trim());
     p.passaporte = p.passaporte.toUpperCase(); p.vistoEua = p.vistoEua.toUpperCase(); p.uf = p.uf.toUpperCase(); p.cep = fmtCEP(p.cep); p.celular = fmtPhone(p.celular);
+    p.extras = readExtras();
+    const dup = p.extras.map(e => Questionario.norm(e.rotulo)).find((n, i, a) => a.indexOf(n) !== i);
+    if (dup) { alert('Há dois campos extras com o mesmo nome. Deixe só um.'); return; }
     if (!p.nome) { alert('Informe o nome completo.'); return; }
     if (p.cpf && !validCPF(p.cpf) && !confirm('O CPF parece inválido. Salvar mesmo assim?')) return;
     if (editingId) { Object.assign(state.people.find(x => x.id === editingId), p); }
     else { p.id = uid(); state.people.push(p); }
-    await save(); closeOcr(); $('#formCard').hidden = true; editingId = null; render(); toast('Salvo');
+    await save(); closeOcr(); $('#formCard').hidden = true; editingId = null; render(); renderMapa(); toast('Salvo');
   };
   $('#btnDelete').onclick = async () => {
     const p = state.people.find(x => x.id === editingId);
@@ -912,37 +1217,117 @@ const DocParse = (() => {
     };
   }
 
-  // ---------- questionário ----------
-  function ticket(p, intl, visa) {
-    const L = [
-      `👤 Nome completo do passageiro: ${p.nome || ''}`,
-      `🔢 CPF: ${p.cpf || ''}`,
-      `🗓️ Data de nascimento: ${fmtDate(p.nascimento)}`,
-      `🌍 Nacionalidade: ${p.nacionalidade || ''}`,
-      `👤 Sexo: ${p.sexo || ''}`,
-      `📧 E-mail: ${p.email || ''}`,
-      `📱Celular: ${p.celular || ''}`
-    ];
-    if (intl) L.push(`🛂 Nr Passaporte e Validade (voo internacional): ${p.passaporte || ''}${p.passaporteValidade ? ' – validade ' + fmtDate(p.passaporteValidade) : ''}`);
-    if (visa) L.push(`🇺🇸 Visto americano: ${p.vistoEua || ''}${p.vistoEuaTipo ? ' (' + p.vistoEuaTipo + ')' : ''}${p.vistoEuaValidade ? ' – validade ' + fmtDate(p.vistoEuaValidade) : ''}`);
-    return L.join('\n');
+  // ---------- questionário (perguntas livres → cadastro) ----------
+  const Q = Questionario;
+  let qEscolhas = {}, qModelId = '';
+  const todosModelos = () => [...Q.MODELOS.map(m => ({ ...m, fixo: true })), ...(state.modelos || [])];
+  function renderModelos() {
+    const ms = todosModelos();
+    $('#qModel').innerHTML = '<option value="">Escolher um modelo…</option>' +
+      ms.map(m => `<option value="${esc(m.id)}" ${m.id === qModelId ? 'selected' : ''}>${esc(m.nome)}${m.fixo ? '' : ' ★'}</option>`).join('');
+    const m = ms.find(x => x.id === qModelId); $('#btnDelModel').hidden = !m || m.fixo;
   }
-  $('#btnGen').onclick = () => {
-    const intl = $('#intl').checked, visa = $('#incVisa').checked;
+  $('#qModel').onchange = e => {
+    const m = todosModelos().find(x => x.id === e.target.value); qModelId = m ? m.id : '';
+    if (m) { $('#qText').value = m.texto; qEscolhas = { ...(m.escolhas || {}) }; $('#out').value = ''; $('#genWarn').textContent = ''; $('#qMissing').hidden = true; }
+    renderModelos(); renderMapa();
+  };
+  $('#btnSaveModel').onclick = async () => {
+    const texto = $('#qText').value.trim(); if (!texto) { toast('Cole as perguntas primeiro'); return; }
+    const atual = (state.modelos || []).find(x => x.id === qModelId);
+    const nome = prompt('Nome do modelo:', atual ? atual.nome : ''); if (!nome || !nome.trim()) return;
+    state.modelos = state.modelos || [];
+    let m = state.modelos.find(x => Q.norm(x.nome) === Q.norm(nome));
+    if (m && m !== atual && !confirm(`Já existe um modelo "${m.nome}". Substituir?`)) return;
+    if (!m) { m = { id: 'm-' + uid() }; state.modelos.push(m); }
+    Object.assign(m, { nome: nome.trim(), texto, escolhas: { ...qEscolhas } }); qModelId = m.id;
+    await save(); renderModelos(); toast('Modelo salvo');
+  };
+  $('#btnDelModel').onclick = async () => {
+    const m = (state.modelos || []).find(x => x.id === qModelId); if (!m || !confirm(`Excluir o modelo "${m.nome}"?`)) return;
+    state.modelos = state.modelos.filter(x => x !== m); qModelId = ''; await save(); renderModelos(); toast('Modelo excluído');
+  };
+
+  // pessoa "de referência" para o mapa: junta os campos extras de quem está marcado (ou de todos)
+  function refPessoa() {
+    const base = state.people.filter(p => selected.has(p.id)); const ppl = base.length ? base : state.people;
+    const ex = []; ppl.forEach(p => (p.extras || []).forEach(e => { if (!ex.some(x => Q.norm(x.rotulo) === Q.norm(e.rotulo))) ex.push({ rotulo: e.rotulo, valor: '' }); }));
+    return { extras: ex };
+  }
+  function descPlano(pl) {
+    if (pl.tipo === 'campo') return pl.campos.map(k => Q.LABEL[k]).join(' + ');
+    if (pl.tipo === 'extra') return pl.rotulo + ' (extra)';
+    if (pl.tipo === 'marcadores') return 'texto com marcadores { }';
+    return pl.nao ? 'não está no cadastro' : 'sem correspondência';
+  }
+  function renderMapa() {
+    const ref = refPessoa(), vistos = new Set(), rows = []; let semCampo = 0;
+    for (const l of $('#qText').value.replace(/\r/g, '').split('\n')) {
+      if (!l.trim()) continue; const k = Q.chave(l); if (!k || vistos.has(k)) continue; vistos.add(k);
+      const auto = Q.plano(l, 'auto', ref);
+      if (auto.tipo === 'texto' && !auto.pergunta) continue;   // linha de texto/continuação, não é pergunta
+      const esc0 = qEscolhas[k] || 'auto', pl = Q.plano(l, esc0, ref);
+      const falta = pl.tipo === 'texto' && !pl.manual; if (falta) semCampo++;
+      const opts = [`<option value="auto">Automático: ${esc(descPlano(auto))}</option>`, `<option value="-" ${esc0 === '-' ? 'selected' : ''}>Deixar sem resposta</option>`,
+        '<optgroup label="Cadastro">' + Q.CAMPOS.map(([c, lab]) => `<option value="${c}" ${esc0 === c ? 'selected' : ''}>${esc(lab)}</option>`).join('') + '</optgroup>',
+        ref.extras.length ? '<optgroup label="Campos extras">' + ref.extras.map(e => `<option value="x:${esc(e.rotulo)}" ${esc0 === 'x:' + e.rotulo ? 'selected' : ''}>${esc(e.rotulo)}</option>`).join('') + '</optgroup>' : ''];
+      rows.push(`<div class="q ${falta ? 'none' : ''}">${esc(l.trim())}</div><select data-qk="${esc(k)}" aria-label="Campo para ${esc(l.trim())}">${opts.join('')}</select>`);
+    }
+    $('#qMap').innerHTML = rows.join('') || '<p class="hint">Nenhuma pergunta ainda.</p>';
+    $('#qMapCount').textContent = rows.length ? `(${rows.length} pergunta${rows.length > 1 ? 's' : ''}${semCampo ? `, ${semCampo} sem campo` : ''})` : '';
+  }
+  let mapaTimer = null;
+  $('#qText').oninput = () => { clearTimeout(mapaTimer); mapaTimer = setTimeout(renderMapa, 300); };
+  $('#qMap').onchange = e => { const k = e.target.dataset.qk; if (k === undefined) return;
+    if (e.target.value === 'auto') delete qEscolhas[k]; else qEscolhas[k] = e.target.value; renderMapa(); if ($('#out').value) gerar(); };
+  $('#list').addEventListener('change', () => renderMapa());
+
+  function gerar() {
+    const texto = $('#qText').value;
     const ppl = state.people.filter(p => selected.has(p.id));
     const warn = [];
-    if (!ppl.length) { $('#genWarn').textContent = 'Selecione ao menos uma pessoa na lista.'; $('#out').value = ''; return; }
-    ppl.forEach(p => {
-      const miss = ['cpf', 'nascimento', 'sexo'].filter(f => !p[f]);
-      if (miss.length) warn.push(`${p.nome}: faltando ${miss.join(', ')}`);
-      if (intl) { if (!p.passaporte) warn.push(`${p.nome}: sem passaporte cadastrado`);
-        const st = expStatus(p.passaporteValidade, 'passaporte', true); if (st && st.cls !== 'b-ok') warn.push(`${p.nome}: ${st.txt}`); }
-      if (visa) { if (!p.vistoEua) warn.push(`${p.nome}: sem visto americano cadastrado`);
-        const st = expStatus(p.vistoEuaValidade, 'visto EUA', false); if (st && st.cls !== 'b-ok') warn.push(`${p.nome}: ${st.txt}`); }
-    });
+    $('#qMissing').hidden = true;
+    if (!texto.trim()) { $('#genWarn').textContent = 'Cole as perguntas ou escolha um modelo.'; $('#out').value = ''; return; }
+    if (!ppl.length) { $('#genWarn').textContent = 'Marque ao menos uma pessoa na lista.'; $('#out').value = ''; return; }
+    const blocos = [], semResp = new Set();
+    for (const p of ppl) {
+      const r = Q.preencher(texto, p, qEscolhas);
+      blocos.push(r.texto.replace(/\s+$/, ''));
+      if (r.faltando.length) warn.push(`${p.nome}: sem ${r.faltando.join(', ')}`);
+      r.semResposta.forEach(x => semResp.add(x));
+      const usa = k => r.texto !== Q.preencher(texto, { ...p, [k]: '' }, qEscolhas).texto;
+      for (const [k, lab, seis] of [['passaporteValidade', 'passaporte', true], ['vistoEuaValidade', 'visto EUA', false]]) {
+        if (!p[k] || !usa(k)) continue; const st = expStatus(p[k], lab, seis); if (st && st.cls !== 'b-ok') warn.push(`${p.nome}: ${st.txt}`);
+      }
+    }
     $('#genWarn').textContent = warn.join(' · ');
-    $('#out').value = ppl.map(p => ticket(p, intl, visa)).join('\n\n');
-  };
+    $('#out').value = blocos.join('\n\n');
+    // perguntas sem campo: oferecer criar como campos extras
+    const novos = Q.perguntasSemCampo(texto, refPessoa(), qEscolhas);
+    if (novos.length) {
+      const um = ppl.length === 1;
+      $('#qMissing').innerHTML = `<p class="hint" style="color:var(--warn)">Sem resposta no cadastro: ${novos.map(n => esc(n.rotulo)).join(' · ')}</p>
+        <div class="row">${ppl.map(p => `<button class="sm" data-mkx="${p.id}">Criar ${novos.length > 1 ? 'esses campos' : 'esse campo'} em ${esc((p.nome || '').split(' ')[0])}</button>`).join('')}
+        <button class="sm" data-mkx="-">Deixar sem resposta</button></div>
+        ${um && novos.some(n => n.valor) ? '<p class="hint">As respostas que já vieram no texto colado entram como valor inicial — confira antes de salvar.</p>' : ''}`;
+      $('#qMissing').hidden = false;
+      $('#qMissing').onclick = e => {
+        const id = e.target.dataset.mkx; if (!id) return;
+        if (id === '-') { novos.forEach(n => { qEscolhas[Q.chave(n.rotulo + ':')] = '-'; }); $('#qMissing').hidden = true; renderMapa(); gerar(); return; }
+        const p = state.people.find(x => x.id === id); if (!p) return;
+        openForm(id);
+        const atuais = readExtras();
+        novos.forEach(n => { if (!atuais.some(x => Q.norm(x.rotulo) === Q.norm(n.rotulo))) atuais.push({ rotulo: n.rotulo, valor: um ? n.valor : '' }); });
+        renderExtras(atuais);
+        $('#extrasTitle').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        toast('Preencha os valores e clique em Salvar');
+      };
+    }
+    if (texto !== (state.qUltimo || {}).texto || JSON.stringify(qEscolhas) !== JSON.stringify((state.qUltimo || {}).escolhas || {})) {
+      state.qUltimo = { texto, escolhas: { ...qEscolhas }, modelo: qModelId }; save();
+    }
+  }
+  $('#btnGen').onclick = gerar;
   $('#btnCopyOut').onclick = () => { if ($('#out').value) copy($('#out').value); };
 
   showLock();
