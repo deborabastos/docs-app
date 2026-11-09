@@ -688,7 +688,17 @@ const Questionario = (() => {
     const ex = p && extraDe(p, perg);
     if (ex) return { ...base, tipo: 'extra', rotulo: ex.rotulo };
     if (a.campos.length) return { ...base, tipo: 'campo', campos: a.campos };
+    if (cabecalho(perg, resp, a.nao)) return { ...base, tipo: 'texto' };   // "Para emissão de nota fiscal, preciso desses dados:" fica como está
     return { ...base, tipo: 'texto', nao: a.nao, pergunta: !solta || a.nao };
+  }
+
+  // frase de abertura de um formulário (não é pergunta): longa, sem resposta depois dos dois-pontos e com palavras de pedido
+  const CABECALHO = / (preciso|precisamos|necessito|necessitamos|seguintes?|abaixo|desses|destes|dessas|destas|por favor|por gentileza|gentileza|favor|solicito|solicitamos|envie|enviar|mande|mandar|informe|informar|informem|preencha|preencher|responda|responder|segue|seguem|para (o |a )?(emissao|cadastro|reserva|inscricao|matricula|compra|nota)|obrigad[oa]|ola|oi|bom dia|boa tarde|boa noite) /;
+  // (uma pergunta curta sobre algo fora do cadastro, como "Informe o nome da mãe:", continua sendo pergunta)
+  function cabecalho(perg, resp, nao) {
+    if (String(resp || '').trim()) return false;
+    const n = norm(perg), palavras = n.trim().split(' ').length;
+    return CABECALHO.test(n) && (palavras >= 6 || (palavras >= 3 && !nao));
   }
 
   function responder(pl, v, linha) {
