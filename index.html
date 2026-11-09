@@ -981,22 +981,15 @@ const Questionario = (() => {
   $('#btnExport').onclick = async () => {
     await save(); const text = JSON.stringify(vault);
     const name = `backup-documentos-${new Date().toISOString().slice(0, 10)}.json`;
-    // 1) Chrome/Edge: escolher onde salvar
-    if (window.showSaveFilePicker) {
-      try {
-        const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Backup', accept: { 'application/json': ['.json'] } }] });
-        const w = await h.createWritable(); await w.write(text); await w.close();
-        toast('Backup salvo'); return;
-      } catch (e) { if (e && e.name === 'AbortError') return; }
-    }
-    // 2) download comum
+    // download direto (vai para Downloads). A janela "Salvar como" do Chrome (showSaveFilePicker) travava a página no Mac.
+    // 1) download comum
     try {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
       a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
     } catch {}
-    // 3) sempre oferecer o texto, caso o navegador tenha bloqueado o download
+    // 2) sempre oferecer o texto, caso o navegador tenha bloqueado o download
     $('#backupMsg').textContent = `Se o download não começou, copie o texto abaixo, cole no Bloco de Notas e salve como "${name}". O conteúdo está criptografado: só abre com a sua senha.`;
     $('#backupText').value = text; $('#backupCard').hidden = false; $('#backupCard').scrollIntoView({ behavior: 'smooth' });
   };
