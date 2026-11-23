@@ -148,7 +148,7 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       <div id="out" class="out" aria-live="polite"></div>
       <details style="margin-top:10px">
         <summary>Dicas</summary>
-        <p class="hint">• Perguntas que não estão no cadastro (matrícula, cargo, estado civil…) podem virar <b>campos extras</b> da pessoa: o app oferece criá-los depois de preencher.<br>
+        <p class="hint">• Perguntas que não estão no cadastro (matrícula, cargo…) podem virar <b>campos extras</b> da pessoa: o app oferece criá-los depois de preencher.<br>
         • Para escrever um texto livre, use marcadores: <code>Sou {primeiro nome}, CPF {cpf}, matrícula {Matrícula}.</code><br>
         • A pergunta pode pedir o formato: <i>(somente números)</i>, <i>(MM/DD/AAAA)</i>, <i>(M/F)</i>, <i>(em maiúsculas)</i>, <i>com DDI</i>. Perguntas em inglês recebem sexo e nacionalidade em inglês.<br>
         • Se o app errar o campo, corrija em “Conferir o que cada pergunta busca”; a escolha fica guardada no modelo.</p>
@@ -195,6 +195,20 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
         <div><label>E-mail</label><input id="f_email" type="email"></div>
         <div><label>Celular</label><input id="f_celular" inputmode="tel" placeholder="(61) 99999-9999"></div>
         <div><label>País de residência</label><select id="f_pais"><option value="BR">Brasil</option><option value="CA">Canadá</option><option value="US">Estados Unidos</option><option value="PT">Portugal</option><option value="OUTRO">Outro</option></select></div>
+      </div>
+      <h3>Dados pessoais e filiação</h3>
+      <div class="grid">
+        <div><label for="f_estadoCivil">Estado civil</label><input id="f_estadoCivil"></div>
+        <div><label for="f_profissao">Profissão</label><input id="f_profissao"></div>
+        <div><label for="f_filiacao1">Filiação (1)</label><input id="f_filiacao1"></div>
+        <div><label for="f_filiacao2">Filiação (2)</label><input id="f_filiacao2"></div>
+      </div>
+      <p class="hint">Filiação (1) corresponde ao campo “mãe”; filiação (2), ao segundo campo, inclusive quando o formulário usa “pai”.</p>
+      <h3>Contato de emergência</h3>
+      <div class="grid">
+        <div><label for="f_emergenciaNome">Contato de emergência</label><input id="f_emergenciaNome"></div>
+        <div><label for="f_emergenciaTelefone">Telefone do contato de emergência</label><input id="f_emergenciaTelefone" inputmode="tel"></div>
+        <div><label for="f_emergenciaParentesco">Grau de parentesco do contato de emergência</label><input id="f_emergenciaParentesco"></div>
       </div>
       <h3>Identidade</h3>
       <div class="grid">
@@ -250,7 +264,7 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
         <div class="full"><label>Observações</label><input id="f_obs" placeholder="ex.: nº de fidelidade, título de eleitor..."></div>
       </div>
       <h3 id="extrasTitle">Campos extras</h3>
-      <p class="hint" style="margin:-4px 0 8px">Qualquer outro dado que os formulários pedem (matrícula, cargo, estado civil…). O nome do campo é o que o questionário procura.</p>
+      <p class="hint" style="margin:-4px 0 8px">Qualquer outro dado que os formulários pedem (matrícula, cargo…). O nome do campo é o que o questionário procura.</p>
       <div id="extras"></div>
       <button class="sm" id="btnAddExtra">+ Adicionar campo</button>
       <div class="row" style="margin-top:14px">
@@ -456,6 +470,7 @@ const Questionario = (() => {
   const CAMPOS = [
     ['nome', 'Nome completo'], ['primeiroNome', 'Primeiro nome'], ['sobrenome', 'Sobrenome(s)'], ['ultimoSobrenome', 'Último sobrenome'],
     ['cpf', 'CPF'], ['nascimento', 'Data de nascimento'], ['idade', 'Idade'], ['nacionalidade', 'Nacionalidade'], ['sexo', 'Sexo'],
+    ['estadoCivil', 'Estado civil'], ['profissao', 'Profissão'], ['filiacao1', 'Filiação (1)'], ['filiacao2', 'Filiação (2)'], ['emergenciaNome', 'Contato de emergência'], ['emergenciaTelefone', 'Telefone do contato de emergência'], ['emergenciaParentesco', 'Grau de parentesco do contato de emergência'],
     ['email', 'E-mail'], ['celular', 'Celular'], ['rg', 'RG / CIN'], ['rgOrgao', 'Órgão emissor do RG'],
     ['passaporte', 'Nº do passaporte'], ['passaporteValidade', 'Validade do passaporte'],
     ['vistoEua', 'Nº do visto americano'], ['vistoEuaTipo', 'Tipo do visto americano'], ['vistoEuaValidade', 'Validade do visto americano'],
@@ -474,12 +489,20 @@ const Questionario = (() => {
   // '@nao' = assunto que existe em formulários, mas não está no cadastro (evita responder errado).
   // '@validade', '@tipo', '@numero' = palavras genéricas resolvidas pelo documento citado na mesma linha.
   const REGRAS = {
-    '@nao': ['nome da mae', 'nome do pai', 'nome dos pais', 'dos pais', 'nomes dos pais', 'nome de mae', 'filiacao', 'nome social', 'nome do responsavel', 'nome da empresa',
-      'nome do contato', 'contato de emergencia', 'telefone de emergencia', 'telefone comercial', 'telefone fixo', 'telefone residencial',
-      'estado civil', 'cidade de nascimento', 'local de nascimento', 'naturalidade', 'pais de nascimento', 'estado de nascimento',
-      'uf de nascimento', 'data de emissao', 'data da emissao', 'emissao', 'profissao', 'ocupacao', 'renda', 'titulo de eleitor', 'cnh',
-      'carteira de motorista', 'conjuge', 'nome do conjuge', 'tipo sanguineo', 'tipo de documento', 'mother', 'father', 'place of birth',
-      'city of birth', 'country of birth', 'issue date', 'date of issue', 'emergency', 'occupation', 'marital status', 'spouse'],
+    '@nao': ['nome social', 'nome da empresa',
+      'telefone comercial', 'telefone fixo', 'telefone residencial',
+      'cidade de nascimento', 'local de nascimento', 'naturalidade', 'pais de nascimento', 'estado de nascimento',
+      'uf de nascimento', 'data de emissao', 'data da emissao', 'emissao', 'renda', 'titulo de eleitor', 'cnh',
+      'carteira de motorista', 'conjuge', 'nome do conjuge', 'tipo sanguineo', 'tipo de documento', 'place of birth',
+      'city of birth', 'country of birth', 'issue date', 'date of issue', 'emergency', 'spouse'],
+    'estadoCivil': ['estado civil', 'situacao conjugal', 'marital status'],
+    'profissao': ['profissao', 'ocupacao', 'occupation', 'profession'],
+    'filiacao1': ['filiacao 1', 'filiacao i', 'primeira filiacao', 'nome da mae', 'nome de mae', 'mae', 'responsavel 1', 'nome do responsavel 1', 'nome da responsavel 1', 'primeiro responsavel', 'mother', 'mother name', 'mothers name', 'parent 1'],
+    'filiacao2': ['filiacao 2', 'filiacao ii', 'segunda filiacao', 'nome do pai', 'nome de pai', 'pai', 'responsavel 2', 'nome do responsavel 2', 'nome da responsavel 2', 'segundo responsavel', 'father', 'father name', 'fathers name', 'parent 2'],
+    '@filiacao': ['filiacao', 'nome dos pais', 'nomes dos pais', 'dos pais', 'nome do responsavel', 'nome da responsavel', 'nomes dos responsaveis', 'responsaveis', 'parents names'],
+    'emergenciaNome': ['contato de emergencia', 'nome do contato de emergencia', 'nome contato emergencia', 'contato emergencia', 'contato para emergencia', 'nome para contato de emergencia', 'nome do contato', 'emergency contact', 'emergency contact name'],
+    'emergenciaTelefone': ['telefone do contato de emergencia', 'telefone de contato de emergencia', 'telefone contato emergencia', 'telefone de emergencia', 'telefone para emergencia', 'telefone emergencia', 'celular do contato de emergencia', 'celular de emergencia', 'fone de emergencia', 'telefone do contato', 'emergency contact phone', 'emergency phone', 'emergency contact phone number'],
+    'emergenciaParentesco': ['grau de parentesco do contato de emergencia', 'parentesco do contato de emergencia', 'grau de parentesco', 'parentesco', 'relacao com o contato de emergencia', 'relacao com o contato', 'emergency contact relationship', 'relationship to emergency contact'],
     nome: ['nome', 'nome completo', 'nome do passageiro', 'nome completo do passageiro', 'nome e sobrenome', 'name', 'full name'],
     primeiroNome: ['primeiro nome', 'prenome', 'first name', 'given name', 'given names'],
     sobrenome: ['sobrenome', 'sobrenomes', 'last name', 'surname', 'family name'],
@@ -571,6 +594,7 @@ const Questionario = (() => {
         else if (temPass2) out.push('passaporte2Validade'); else if (temPass) out.push('passaporteValidade'); }
       else if (k === '@tipo') { if (temVisto) out.push('vistoEuaTipo'); }
       else if (k === '@numero') { if (!temDoc && ks.length === 1) out.push('numero'); else if (!temDoc && ks.some(x => ADDR.includes(x)) && !ks.includes('endereco')) out.push('numero'); }
+      else if (k === '@filiacao') out.push('filiacao1', 'filiacao2');
       else out.push(k);
     }
     if (out.includes('endereco')) out = out.filter(k => !ADDR.includes(k));
@@ -630,7 +654,7 @@ const Questionario = (() => {
         if (k.startsWith('passaporteValidade@')) { v = fmtD(passaporteDo(p, k.split('@')[1]).v, mods.data); break; }
         v = p[k] == null ? '' : String(p[k]);
     }
-    if (mods.digitos && !['nome', 'primeiroNome', 'sobrenome', 'ultimoSobrenome', 'email', 'sexo', 'nacionalidade', 'endereco', 'obs'].includes(k)) v = v.replace(/\D/g, '');
+    if (mods.digitos && !['nome', 'primeiroNome', 'sobrenome', 'ultimoSobrenome', 'email', 'sexo', 'nacionalidade', 'endereco', 'obs', 'estadoCivil', 'profissao', 'filiacao1', 'filiacao2', 'emergenciaNome', 'emergenciaParentesco'].includes(k)) v = v.replace(/\D/g, '');
     if (mods.maiusc) v = v.toUpperCase();
     return v;
   }
@@ -684,7 +708,8 @@ const Questionario = (() => {
     if (escolha && escolha !== 'auto' && LABEL[escolha]) return { ...base, tipo: 'campo', campos: [escolha], manual: true };
     // sem dois-pontos nem "?": só responde linhas curtas e sem números (evita mexer em respostas de várias linhas)
     const solta = !temDois && !/\?\s*$/.test(perg);
-    if (solta && (/\d/.test(perg) || perg.trim().split(/\s+/).length > 6)) return { ...base, tipo: 'texto' };
+    const novoCampo = a.campos.some(k => ['estadoCivil', 'profissao', 'filiacao1', 'filiacao2', 'emergenciaNome', 'emergenciaTelefone', 'emergenciaParentesco'].includes(k));
+    if (solta && !novoCampo && (/\d/.test(perg) || perg.trim().split(/\s+/).length > 6)) return { ...base, tipo: 'texto' };
     const ex = p && extraDe(p, perg);
     if (ex) return { ...base, tipo: 'extra', rotulo: ex.rotulo };
     if (a.campos.length) return { ...base, tipo: 'campo', campos: a.campos };
@@ -771,7 +796,7 @@ const Questionario = (() => {
   const IDLE_MS = 5 * 60 * 1000;
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   const TESS_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
-  const FIELDS = ['nome','cpf','nascimento','nacionalidade','sexo','email','celular','pais','rg','rgOrgao','passaporte','passaporteValidade','passaportePais','passaporte2','passaporte2Validade','passaporte2Pais','sin','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
+  const FIELDS = ['estadoCivil','profissao','filiacao1','filiacao2','emergenciaNome','emergenciaTelefone','emergenciaParentesco','nome','cpf','nascimento','nacionalidade','sexo','email','celular','pais','rg','rgOrgao','passaporte','passaporteValidade','passaportePais','passaporte2','passaporte2Validade','passaporte2Pais','sin','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
   const ADDR = ['pais','cep','logradouro','numero','complemento','bairro','cidade','uf'];
   const fmtCEP = v => { const d = String(v).replace(/\D/g, '').slice(0, 8); return d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; };
   const fullAddress = p => Questionario.enderecoCompleto(p);
@@ -1027,6 +1052,7 @@ const Questionario = (() => {
         expStatus(p.passaporte2Validade, 'passaporte ' + (p.passaporte2Pais || '2'), true), expStatus(p.vistoEuaValidade, 'visto EUA', false)].filter(Boolean);
       const rows = [
         ['CPF', p.cpf], ['Nascimento', fmtDate(p.nascimento)], ['Nacionalidade', p.nacionalidade], ['Sexo', p.sexo],
+        ['Estado civil', p.estadoCivil], ['Profissão', p.profissao], ['Filiação (1)', p.filiacao1], ['Filiação (2)', p.filiacao2], ['Contato de emergência', p.emergenciaNome], ['Telefone do contato de emergência', p.emergenciaTelefone], ['Grau de parentesco do contato de emergência', p.emergenciaParentesco],
         ['E-mail', p.email], ['Celular', p.celular], ['País de residência', p.pais && p.pais !== 'BR' ? (Questionario.PAISES[p.pais] || {}).nome || p.pais : ''],
         ['RG/CIN', [p.rg, p.rgOrgao].filter(Boolean).join(' – ')], ['SIN (Canadá)', p.sin],
         ['Passaporte' + (p.passaportePais ? ' ' + p.passaportePais : ''), p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
@@ -1559,3 +1585,4 @@ const Questionario = (() => {
 </script>
 </body>
 </html>
+
