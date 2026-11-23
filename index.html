@@ -205,6 +205,9 @@ details pre{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;b
       </div>
       <p class="hint">Filiação (1) corresponde ao campo “mãe”; filiação (2), ao segundo campo, inclusive quando o formulário usa “pai”.</p>
       <h3>Contato de emergência</h3>
+      <label for="f_emergenciaPessoaId">Pessoa cadastrada</label>
+      <select id="f_emergenciaPessoaId"></select>
+      <p class="hint">Ao vincular uma pessoa, o nome e o telefone vêm da ficha dela. O grau de parentesco é informado abaixo. Para alguém de fora do cadastro, escolha “Contato não cadastrado”.</p>
       <div class="grid">
         <div><label for="f_emergenciaNome">Contato de emergência</label><input id="f_emergenciaNome"></div>
         <div><label for="f_emergenciaTelefone">Telefone do contato de emergência</label><input id="f_emergenciaTelefone" inputmode="tel"></div>
@@ -632,6 +635,72 @@ const Questionario = (() => {
     portugues: 'Portuguese', canadense: 'Canadian', italiana: 'Italian', italiano: 'Italian', espanhola: 'Spanish', espanhol: 'Spanish', argentina: 'Argentinian',
     argentino: 'Argentinian', alema: 'German', alemao: 'German', francesa: 'French', frances: 'French' };
 
+
+  // Um formato compartilhado pelo app e pelo bot; DDI explícito sempre prevalece.
+  function formatarTelefone(valor, pais = 'BR', ddi = false) {
+    const v = String(valor || '').trim().replace(/\s+/g, ' ');
+    let d = v.replace(/\D/g, '');
+    if (!d || /[a-z]/i.test(v)) return v;
+    const br = x => x.length === 11 ? `(${x.slice(0,2)}) ${x.slice(2,7)}-${x.slice(7)}` : x.length === 10 ? `(${x.slice(0,2)}) ${x.slice(2,6)}-${x.slice(6)}` : '';
+    const na = x => x.length === 10 ? `(${x.slice(0,3)}) ${x.slice(3,6)}-${x.slice(6)}` : '';
+    const pt = x => x.length === 9 ? `${x.slice(0,3)} ${x.slice(3,6)} ${x.slice(6)}` : '';
+    const internacional = /^\+|^00/.test(v);
+    if (/^00/.test(v)) d = d.slice(2);
+    if (internacional) {
+      if (d.startsWith('55') && br(d.slice(2))) return (pais !== 'BR' || ddi ? '+55 ' : '') + br(d.slice(2));
+      if (d.startsWith('1') && na(d.slice(1))) return '+1 ' + na(d.slice(1));
+      if (d.startsWith('351') && pt(d.slice(3))) return '+351 ' + pt(d.slice(3));
+      return '+' + d;
+    }
+    if (pais === 'CA' || pais === 'US') {
+      if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
+      return na(d) ? '+1 ' + na(d) : v;
+    }
+    if (pais === 'PT') {
+      if (d.length === 12 && d.startsWith('351')) d = d.slice(3);
+      return pt(d) ? '+351 ' + pt(d) : v;
+    }
+    if (pais === 'BR') {
+      if ((d.length === 12 || d.length === 13) && d.startsWith('55')) d = d.slice(2);
+      return br(d) ? (ddi ? '+55 ' : '') + br(d) : v;
+    }
+    return v;
+  }
+
+  function contatoDe(p, pessoas) {
+    if (p.emergenciaPessoaId) return pessoas.find(c => c.id && c.id === p.emergenciaPessoaId && c.id !== p.id) || null;
+    const alvo = norm(p.emergenciaNome).trim().split(' ').filter(Boolean);
+    if (alvo.length < 2) return null;
+    const candidatos = pessoas.filter(c => {
+      if (!c.id || c === p || (p.id && c.id === p.id)) return false;
+      const nomes = norm(c.nome).trim().split(' '); let i = 0;
+      return alvo.every(t => { while (i < nomes.length && nomes[i] !== t) i++; return i++ < nomes.length; });
+    });
+    return candidatos.length === 1 ? candidatos[0] : null;
+  }
+
+  // Persiste só a referência; o parentesco pertence ao vínculo, não à ficha do contato.
+  function migrarContatos(pessoas) {
+    return pessoas.map(p => {
+      const contato = contatoDe(p, pessoas), r = { ...p, celular: formatarTelefone(p.celular, p.pais || 'BR') };
+      if (contato) r.emergenciaPessoaId = contato.id;
+      if (r.emergenciaPessoaId) {
+        delete r.emergenciaNome; delete r.emergenciaTelefone; delete r.emergenciaPais;
+      } else if (r.emergenciaTelefone) r.emergenciaTelefone = formatarTelefone(r.emergenciaTelefone, r.emergenciaPais || p.pais || 'BR');
+      return r;
+    });
+  }
+
+  // Cópias para exibição: alterações no nome/telefone da ficha valem imediatamente para todos os vínculos.
+  function vincularContatos(pessoas) {
+    return pessoas.map(p => {
+      const contato = contatoDe(p, pessoas);
+      if (contato) return { ...p, emergenciaPessoaId: contato.id, emergenciaNome: contato.nome || '',
+        emergenciaTelefone: contato.celular || '', emergenciaPais: contato.pais || 'BR' };
+      return p.emergenciaPessoaId ? { ...p, emergenciaNome: '', emergenciaTelefone: '' } : { ...p };
+    });
+  }
+
   function valor(p, k, mods = {}) {
     const nome = String(p.nome || '').trim().split(/\s+/).filter(Boolean);
     let v;
@@ -646,9 +715,8 @@ const Questionario = (() => {
       case 'endereco': v = enderecoCompleto(p, mods.en); break;
       case 'sexo': v = p.sexo || ''; if (v && mods.mf) v = v[0].toUpperCase(); else if (v && mods.en) v = /^f/i.test(v) ? 'Female' : 'Male'; break;
       case 'nacionalidade': v = p.nacionalidade || ''; if (v && mods.en) v = NAC_EN[norm(v).trim()] || v; break;
-      case 'celular': { v = p.celular || ''; const c = PAISES[paisDe(p)];
-        // quem mora fora sempre sai com DDI (um número canadense sem +1 confunde num formulário brasileiro)
-        if (v && !/^\+/.test(v) && c && (mods.ddi || paisDe(p) !== 'BR')) v = c.ddi + ' ' + v; break; }
+      case 'celular': v = formatarTelefone(p.celular, paisDe(p), mods.ddi); break;
+      case 'emergenciaTelefone': v = formatarTelefone(p.emergenciaTelefone, p.emergenciaPais || paisDe(p), mods.ddi); break;
       default:
         if (k.startsWith('passaporte@')) { v = passaporteDo(p, k.split('@')[1]).n; break; }
         if (k.startsWith('passaporteValidade@')) { v = fmtD(passaporteDo(p, k.split('@')[1]).v, mods.data); break; }
@@ -786,7 +854,7 @@ const Questionario = (() => {
       'Nome completo:\nCPF:\nRG e órgão emissor:\nData de nascimento:\nE-mail:\nTelefone:\nEndereço completo:' }
   ];
 
-  return { CAMPOS, LABEL, MARCA, PAISES, enderecoCompleto, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
+  return { formatarTelefone, contatoDe, migrarContatos, vincularContatos, CAMPOS, LABEL, MARCA, PAISES, enderecoCompleto, analisar, valor, preencher, plano, chave, perguntasSemCampo, MODELOS, norm };
 })();
 </script>
 
@@ -796,7 +864,7 @@ const Questionario = (() => {
   const IDLE_MS = 5 * 60 * 1000;
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   const TESS_SRI = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
-  const FIELDS = ['estadoCivil','profissao','filiacao1','filiacao2','emergenciaNome','emergenciaTelefone','emergenciaParentesco','nome','cpf','nascimento','nacionalidade','sexo','email','celular','pais','rg','rgOrgao','passaporte','passaporteValidade','passaportePais','passaporte2','passaporte2Validade','passaporte2Pais','sin','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
+  const FIELDS = ['emergenciaPessoaId','estadoCivil','profissao','filiacao1','filiacao2','emergenciaNome','emergenciaTelefone','emergenciaParentesco','nome','cpf','nascimento','nacionalidade','sexo','email','celular','pais','rg','rgOrgao','passaporte','passaporteValidade','passaportePais','passaporte2','passaporte2Validade','passaporte2Pais','sin','vistoEua','vistoEuaTipo','vistoEuaValidade','cep','logradouro','numero','complemento','bairro','cidade','uf','obs'];
   const ADDR = ['pais','cep','logradouro','numero','complemento','bairro','cidade','uf'];
   const fmtCEP = v => { const d = String(v).replace(/\D/g, '').slice(0, 8); return d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; };
   const fullAddress = p => Questionario.enderecoCompleto(p);
@@ -832,20 +900,7 @@ const Questionario = (() => {
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 1800); }
 
   // telefone no padrão do país de residência. Número digitado com "+" (DDI) é respeitado.
-  function fmtPhone(v, pais = 'BR') {
-    v = String(v || '').trim(); let d = v.replace(/\D/g, '');
-    const br = x => x.length === 11 ? `(${x.slice(0,2)}) ${x.slice(2,7)}-${x.slice(7)}` : x.length === 10 ? `(${x.slice(0,2)}) ${x.slice(2,6)}-${x.slice(6)}` : '';
-    const nanp = x => x.length === 10 ? `(${x.slice(0,3)}) ${x.slice(3,6)}-${x.slice(6)}` : '';
-    if (/^\+/.test(v)) {
-      if (d.startsWith('55') && br(d.slice(2))) return '+55 ' + br(d.slice(2));
-      if (d.startsWith('1') && nanp(d.slice(1))) return '+1 ' + nanp(d.slice(1));
-      return v;
-    }
-    if (pais === 'CA' || pais === 'US') { if (d.length === 11 && d[0] === '1') d = d.slice(1); return nanp(d) || v; }
-    if (pais === 'PT') return d.length === 9 ? `${d.slice(0,3)} ${d.slice(3,6)} ${d.slice(6)}` : v;
-    if (pais === 'BR') return br(d) || v;
-    return v;
-  }
+  const fmtPhone = Questionario.formatarTelefone;
   function expStatus(iso, label, sixMonths) {
     if (!iso) return null;
     const exp = new Date(iso + 'T00:00:00'), now = new Date(); const lim = new Date(now); lim.setMonth(lim.getMonth() + 6);
@@ -877,6 +932,7 @@ const Questionario = (() => {
   async function unseal(key, box) { return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(box.iv) }, key, unb64(box.ct))); }
   let dek = null, dekRaw = null, vault = null;   // vault: { v:2, salt, pw, bio:[], bioSalt, data }
   async function save() {
+    state.people = Questionario.migrarContatos(state.people);
     vault.data = await seal(dek, enc.encode(JSON.stringify(state)));
     try { localStorage.setItem(KEY, JSON.stringify(vault)); }
     catch { alert('Não foi possível salvar no navegador. Exporte um backup agora.'); }
@@ -887,6 +943,8 @@ const Questionario = (() => {
     state = JSON.parse(dec.decode(await unseal(dek, blob.data))); if (!Array.isArray(state.people)) state.people = [];
   }
   function enterApp() {
+    state.people = Questionario.migrarContatos(state.people);
+    save();
     if (!state.ordemManual) {
       state.people.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')); state.ordemManual = true; save();
     }
@@ -1045,15 +1103,15 @@ const Questionario = (() => {
 
   // ---------- lista ----------
   function render() {
-    const list = $('#list'); const ppl = state.people;   // a ordem é a da lista guardada (definida pelo usuário)
+    const list = $('#list'); const ppl = Questionario.vincularContatos(state.people);   // a ordem é a da lista guardada (definida pelo usuário)
     $('#emptyHint').hidden = ppl.length > 0;
     list.innerHTML = ppl.map(p => {
       const badges = [expStatus(p.passaporteValidade, 'passaporte' + (p.passaportePais && p.passaportePais !== 'BRA' ? ' ' + p.passaportePais : ''), true),
         expStatus(p.passaporte2Validade, 'passaporte ' + (p.passaporte2Pais || '2'), true), expStatus(p.vistoEuaValidade, 'visto EUA', false)].filter(Boolean);
       const rows = [
         ['CPF', p.cpf], ['Nascimento', fmtDate(p.nascimento)], ['Nacionalidade', p.nacionalidade], ['Sexo', p.sexo],
-        ['Estado civil', p.estadoCivil], ['Profissão', p.profissao], ['Filiação (1)', p.filiacao1], ['Filiação (2)', p.filiacao2], ['Contato de emergência', p.emergenciaNome], ['Telefone do contato de emergência', p.emergenciaTelefone], ['Grau de parentesco do contato de emergência', p.emergenciaParentesco],
-        ['E-mail', p.email], ['Celular', p.celular], ['País de residência', p.pais && p.pais !== 'BR' ? (Questionario.PAISES[p.pais] || {}).nome || p.pais : ''],
+        ['Estado civil', p.estadoCivil], ['Profissão', p.profissao], ['Filiação (1)', p.filiacao1], ['Filiação (2)', p.filiacao2], ['Contato de emergência', p.emergenciaNome], ['Telefone do contato de emergência', fmtPhone(p.emergenciaTelefone, p.emergenciaPais || p.pais || 'BR')], ['Grau de parentesco do contato de emergência', p.emergenciaParentesco],
+        ['E-mail', p.email], ['Celular', fmtPhone(p.celular, p.pais || 'BR')], ['País de residência', p.pais && p.pais !== 'BR' ? (Questionario.PAISES[p.pais] || {}).nome || p.pais : ''],
         ['RG/CIN', [p.rg, p.rgOrgao].filter(Boolean).join(' – ')], ['SIN (Canadá)', p.sin],
         ['Passaporte' + (p.passaportePais ? ' ' + p.passaportePais : ''), p.passaporte], ['Validade passaporte', fmtDate(p.passaporteValidade)],
         ['Passaporte' + (p.passaporte2Pais ? ' ' + p.passaporte2Pais : ' 2'), p.passaporte2], ['Validade passaporte' + (p.passaporte2Pais ? ' ' + p.passaporte2Pais : ' 2'), fmtDate(p.passaporte2Validade)],
@@ -1061,7 +1119,7 @@ const Questionario = (() => {
         ['Endereço', fullAddress(p)], [(p.pais || 'BR') === 'BR' ? 'CEP' : 'Postal code', p.cep],
         ['Obs.', p.obs], ...(p.extras || []).map(e => [esc(e.rotulo), e.valor])
       ].filter(r => r[1]);
-      const idx = ppl.indexOf(p), n = ppl.length;
+      const idx = ppl.findIndex(c => c.id === p.id), n = ppl.length;
       return `<div class="person" data-pid="${p.id}" draggable="${n > 1}">
         <div class="row">
           ${n > 1 ? `<span class="grip" title="Arraste para reordenar" aria-hidden="true">⠿</span>` : ''}
@@ -1114,8 +1172,12 @@ const Questionario = (() => {
   // ---------- formulário ----------
   function openForm(id) {
     closeOcr();
-    editingId = id || null; const p = state.people.find(x => x.id === id) || { nacionalidade: 'Brasileira' };
+    editingId = id || null; const p = Questionario.vincularContatos(state.people).find(x => x.id === id) || { nacionalidade: 'Brasileira' };
+    $('#f_emergenciaPessoaId').innerHTML = '<option value="">Contato não cadastrado (preencher abaixo)</option>' +
+      state.people.filter(c => c.id !== id).map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('') +
+      (p.emergenciaPessoaId && !state.people.some(c => c.id === p.emergenciaPessoaId) ? `<option value="${esc(p.emergenciaPessoaId)}">Contato indisponível — escolha outra pessoa</option>` : '');
     FIELDS.forEach(f => $('#f_' + f).value = p[f] || '');
+    atualizarContato();
     $('#f_pais').value = p.pais || 'BR'; aplicarPais(); $('#sinErr').textContent = '';
     $('#pass2Wrap').open = !!(p.passaporte2 || p.passaporte2Pais);
     renderExtras(p.extras || []);
@@ -1129,6 +1191,16 @@ const Questionario = (() => {
     $('#addrFrom').parentElement.hidden = !others.length;
     $('#formCard').hidden = false; $('#formCard').scrollIntoView({ behavior: 'smooth' }); $('#f_nome').focus();
   }
+  function atualizarContato(limpar = false) {
+    const id = $('#f_emergenciaPessoaId').value;
+    const contato = state.people.find(c => c.id === id);
+    for (const [campo, valor] of [['emergenciaNome', contato?.nome || ''], ['emergenciaTelefone', contato ? fmtPhone(contato.celular, contato.pais || 'BR') : '']]) {
+      const input = $('#f_' + campo); input.readOnly = !!id;
+      if (id || limpar) input.value = valor;
+    }
+  }
+  $('#f_emergenciaPessoaId').onchange = () => atualizarContato(true);
+  $('#f_emergenciaTelefone').onblur = e => { if (!$('#f_emergenciaPessoaId').value) e.target.value = fmtPhone(e.target.value, $('#f_pais').value); };
   function renderExtras(list) {
     $('#extras').innerHTML = list.map(e => `<div class="extra"><input class="x-r" placeholder="Nome do campo (ex.: Matrícula)" value="${esc(e.rotulo)}"><input class="x-v" placeholder="Valor" value="${esc(e.valor)}"><button class="sm" data-xdel title="Remover campo">✕</button></div>`).join('');
   }
@@ -1213,7 +1285,11 @@ const Questionario = (() => {
   };
   $('#btnDelete').onclick = async () => {
     const p = state.people.find(x => x.id === editingId);
-    if (!p || !confirm(`Excluir ${p.nome}?`)) return;
+    if (!p) return;
+    if (state.people.some(c => c.id !== p.id && (c.emergenciaPessoaId === p.id || Questionario.contatoDe(c, state.people)?.id === p.id))) {
+      alert('Esta pessoa é contato de emergência de outra ficha. Troque esse vínculo antes de excluir.'); return;
+    }
+    if (!confirm(`Excluir ${p.nome}?`)) return;
     state.people = state.people.filter(x => x.id !== editingId); selected.delete(editingId);
     await save(); closeOcr(); $('#formCard').hidden = true; editingId = null; render(); toast('Excluído');
   };
@@ -1533,7 +1609,7 @@ const Questionario = (() => {
 
   function gerar() {
     const texto = $('#qText').value;
-    const ppl = state.people.filter(p => selected.has(p.id));
+    const ppl = Q.vincularContatos(state.people).filter(p => selected.has(p.id));
     const warn = [];
     $('#qMissing').hidden = true;
     if (!texto.trim()) { $('#genWarn').textContent = 'Cole as perguntas ou escolha um modelo.'; setOut(''); return; }
@@ -1585,4 +1661,5 @@ const Questionario = (() => {
 </script>
 </body>
 </html>
+
 
